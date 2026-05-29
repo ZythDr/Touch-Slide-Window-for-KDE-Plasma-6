@@ -1,0 +1,276 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+GROUP="Script-touch-slide-window"
+
+default_for() {
+  case "$1" in
+    visibleStripPixels) echo 10 ;;
+    revealGap) echo 8 ;;
+    hoverMargin) echo 5 ;;
+    leaveMargin) echo 8 ;;
+    moveTolerance) echo 40 ;;
+    animate) echo true ;;
+    animationSteps) echo 12 ;;
+    animationIntervalMs) echo 14 ;;
+    dockToVirtualScreenEdges) echo true ;;
+    suppressMinimizeFallback) echo true ;;
+    allowMoveAlongDockEdge) echo true ;;
+    hideOnDockEdgeHit) echo false ;;
+    attentionPokeEnabled) echo true ;;
+    attentionPokeMode) echo 0 ;;
+    attentionPokePixels) echo 20 ;;
+    attentionPokeHoldMs) echo 1200 ;;
+    attentionRepeatCount) echo 2 ;;
+    attentionPokeCooldownMs) echo 2000 ;;
+    attentionAnimationSteps) echo 6 ;;
+    attentionAnimationIntervalMs) echo 14 ;;
+    resizeOnDockEnabled) echo false ;;
+    centerOnDockEnabled) echo false ;;
+    defaultResizeWidthValue) echo 0 ;;
+    defaultResizeHeightValue) echo 90 ;;
+    attentionPreviewCounter) echo 0 ;;
+    restoreAllCounter) echo 0 ;;
+    settingsCommand) echo "$HOME/Code/touch-slide-window-v42/touchslide-settings" ;;
+    *)
+      if [[ "$1" =~ ^override[0-9][0-9]Enabled$ ]]; then echo false
+      elif [[ "$1" =~ ^override[0-9][0-9]Name$ ]]; then echo ""
+      elif [[ "$1" =~ ^override[0-9][0-9]Match$ ]]; then echo ""
+      elif [[ "$1" =~ ^override[0-9][0-9]Target$ ]]; then echo 0
+      elif [[ "$1" =~ ^override[0-9][0-9]CenterEnabled$ ]]; then echo false
+      elif [[ "$1" =~ ^override[0-9][0-9]ResizeEnabled$ ]]; then echo false
+      elif [[ "$1" =~ ^override[0-9][0-9]WidthValue$ ]]; then echo 0
+      elif [[ "$1" =~ ^override[0-9][0-9]HeightValue$ ]]; then echo 0
+      else echo ""
+      fi
+      ;;
+  esac
+}
+
+list_keys() {
+  printf '%s\n' \
+    visibleStripPixels \
+    revealGap \
+    hoverMargin \
+    leaveMargin \
+    moveTolerance \
+    animate \
+    animationSteps \
+    animationIntervalMs \
+    dockToVirtualScreenEdges \
+    suppressMinimizeFallback \
+    allowMoveAlongDockEdge \
+    hideOnDockEdgeHit \
+    attentionPokeEnabled \
+    attentionPokeMode \
+    attentionPokePixels \
+    attentionPokeHoldMs \
+    attentionRepeatCount \
+    attentionPokeCooldownMs \
+    attentionAnimationSteps \
+    attentionAnimationIntervalMs \
+    resizeOnDockEnabled \
+    centerOnDockEnabled \
+    defaultResizeWidthValue \
+    defaultResizeHeightValue \
+    attentionPreviewCounter \
+    restoreAllCounter \
+    settingsCommand
+
+  for i in $(seq -w 1 50); do
+    printf '%s\n' \
+      "override${i}Enabled" \
+      "override${i}Name" \
+      "override${i}Match" \
+      "override${i}Target" \
+      "override${i}CenterEnabled" \
+      "override${i}ResizeEnabled" \
+      "override${i}WidthValue" \
+      "override${i}HeightValue"
+  done
+}
+
+get_value() {
+  local key="$1"
+  local val
+  val="$(kreadconfig6 --file kwinrc --group "$GROUP" --key "$key" 2>/dev/null || true)"
+  if [ -z "$val" ]; then
+    default_for "$key"
+  else
+    printf '%s\n' "$val"
+  fi
+}
+
+usage() {
+  cat <<'EOF'
+touchslide-config - configure Touch Slide Window
+
+Usage:
+  touchslide-config list
+  touchslide-config set KEY VALUE
+  touchslide-config get KEY
+  touchslide-config defaults
+  touchslide-config preview
+  touchslide-config restore-all
+  touchslide-config reload
+  touchslide-config import-last-capture
+  touchslide-config safe-disable
+  touchslide-config gui
+EOF
+}
+
+reconfigure() {
+  qdbus6 org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
+}
+
+write_default_if_missing() {
+  local key="$1"
+  local val
+  val="$(kreadconfig6 --file kwinrc --group "$GROUP" --key "$key" 2>/dev/null || true)"
+  if [ -z "$val" ]; then
+    kwriteconfig6 --file kwinrc --group "$GROUP" --key "$key" "$(default_for "$key")"
+  fi
+}
+
+bump_counter() {
+  local key="$1"
+  local old new
+  old="$(get_value "$key")"
+  case "$old" in ''|*[!0-9]*) old=0 ;; esac
+  new=$((old + 1))
+  kwriteconfig6 --file kwinrc --group "$GROUP" --key "$key" "$new"
+  reconfigure
+}
+
+
+decode_capture_field() {
+  local line="$1"
+  local key="$2"
+  printf '%s\n' "$line" | sed -n "s/.*|${key}=\([^|]*\).*/\1/p" | tail -n 1
+}
+
+find_last_capture_line() {
+  # KWin print() output usually lands in the user/system journal. Try both.
+  local line=""
+  line="$(journalctl --user --since "2 hours ago" --no-pager 2>/dev/null | grep 'OVERRIDE_CAPTURE|' | tail -n 1 || true)"
+  if [ -z "$line" ]; then
+    line="$(journalctl --since "2 hours ago" --no-pager 2>/dev/null | grep 'OVERRIDE_CAPTURE|' | tail -n 1 || true)"
+  fi
+  printf '%s\n' "$line"
+}
+
+first_empty_override_slot() {
+  local i key name match
+  for i in $(seq -w 1 50); do
+    name="$(kreadconfig6 --file kwinrc --group "$GROUP" --key "override${i}Name" 2>/dev/null || true)"
+    match="$(kreadconfig6 --file kwinrc --group "$GROUP" --key "override${i}Match" 2>/dev/null || true)"
+    if [ -z "$name" ] && [ -z "$match" ]; then
+      printf '%s\n' "$i"
+      return 0
+    fi
+  done
+  return 1
+}
+
+import_last_capture() {
+  local line slot name match target
+
+  line="$(find_last_capture_line)"
+  if [ -z "$line" ]; then
+    echo "No OVERRIDE_CAPTURE line found in journal from the last 2 hours." >&2
+    echo "Use the titlebar menu: Touch Slide Window -> Capture Window Info for Override" >&2
+    return 1
+  fi
+
+  name="$(decode_capture_field "$line" "name")"
+  match="$(decode_capture_field "$line" "match")"
+  target="$(decode_capture_field "$line" "target")"
+
+  if [ -z "$match" ]; then
+    echo "Capture line found, but it did not contain a usable match field." >&2
+    echo "$line" >&2
+    return 1
+  fi
+
+  case "$target" in
+    0|1|2|3) ;;
+    *) target=0 ;;
+  esac
+
+  slot="$(first_empty_override_slot)" || {
+    echo "No empty override slot found. Clear one of the 50 override rows first." >&2
+    return 1
+  }
+
+  kwriteconfig6 --file kwinrc --group "$GROUP" --key "override${slot}Enabled" false
+  kwriteconfig6 --file kwinrc --group "$GROUP" --key "override${slot}Name" "${name:-$match}"
+  kwriteconfig6 --file kwinrc --group "$GROUP" --key "override${slot}Match" "$match"
+  kwriteconfig6 --file kwinrc --group "$GROUP" --key "override${slot}Target" "$target"
+  kwriteconfig6 --file kwinrc --group "$GROUP" --key "override${slot}CenterEnabled" false
+  kwriteconfig6 --file kwinrc --group "$GROUP" --key "override${slot}ResizeEnabled" false
+  kwriteconfig6 --file kwinrc --group "$GROUP" --key "override${slot}WidthValue" 0
+  kwriteconfig6 --file kwinrc --group "$GROUP" --key "override${slot}HeightValue" 0
+
+  reconfigure
+
+  echo "Imported latest captured window into override row ${slot}."
+  echo "Name=${name:-$match}"
+  echo "Match=$match"
+  echo "Target=$target"
+  echo "The row is filled but left disabled. Enable C/S/W/H in the KWin config GUI, then Apply and reload."
+}
+
+
+case "${1:-}" in
+  list)
+    for key in $(list_keys); do
+      printf '%s=%s\n' "$key" "$(get_value "$key")"
+    done
+    ;;
+  get)
+    [ $# -eq 2 ] || { usage; exit 1; }
+    get_value "$2"
+    ;;
+  set)
+    [ $# -eq 3 ] || { usage; exit 1; }
+    kwriteconfig6 --file kwinrc --group "$GROUP" --key "$2" "$3"
+    reconfigure
+    echo "Set $2=$3"
+    ;;
+  defaults)
+    for key in $(list_keys); do
+      write_default_if_missing "$key"
+    done
+    reconfigure
+    echo "Wrote missing defaults to $GROUP."
+    ;;
+  preview)
+    bump_counter attentionPreviewCounter
+    echo "Triggered attention poke preview for docked windows."
+    ;;
+  restore-all)
+    bump_counter restoreAllCounter
+    echo "Requested restore of all docked windows."
+    ;;
+  reload)
+    reconfigure
+    echo "Requested KWin reconfigure. Press Meta+Ctrl+Alt+R if needed."
+    ;;
+  import-last-capture)
+    import_last_capture
+    ;;
+  safe-disable)
+    bump_counter restoreAllCounter
+    sleep 1
+    kwriteconfig6 --file kwinrc --group Plugins --key touch-slide-windowEnabled false
+    qdbus6 org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
+    echo "Requested restore-all, then disabled Touch Slide Window."
+    ;;
+  gui)
+    exec "$(dirname "$0")/touchslide-settings"
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac

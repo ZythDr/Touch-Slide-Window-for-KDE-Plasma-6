@@ -1,0 +1,21 @@
+{
+    "KPackageStructure": "KWin/Script",
+    "KPlugin": {
+        "Name": "Touch Slide Window",
+        "Description": "Touch Slide Window stable-ID build with About tab and refined overrides UI.",
+        "Icon": "preferences-system-windows",
+        "Authors": [
+            {
+                "Name": "Jk 92"
+            }
+        ],
+        "Id": "touch-slide-window",
+        "Version": "0.42.0",
+        "License": "GPLv3",
+        "EnabledByDefault": false
+    },
+    "X-Plasma-API": "javascript",
+    "X-Plasma-MainScript": "code/main.js",
+    "X-Plasma-API-Minimum-Version": "6.0",
+    "X-KDE-ConfigModule": "kwin/effects/configs/kcm_kwin4_genericscripted"
+}

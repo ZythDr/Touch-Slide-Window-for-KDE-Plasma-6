@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+CFG="$DIR/touchslide-config"
+
+"$CFG" defaults >/dev/null 2>&1 || true
+
+if command -v kdialog >/dev/null 2>&1; then
+  while true; do
+    choice="$(kdialog --title "Touch Slide Window Settings" --menu "Touch Slide Window" \
+      list "Show current config" \
+      preview "Preview notification poke" \
+      reload "Reload settings" \
+      restore "Restore all docked windows" \
+      import "Import last captured window into override row" \
+      info "Override help" 2>/dev/null)" || exit 0
+    case "$choice" in
+      list)
+        tmp="/tmp/touchslide-config-list.txt"
+        "$CFG" list > "$tmp"
+        kdialog --textbox "$tmp" 900 700
+        ;;
+      preview)
+        "$CFG" preview >/dev/null
+        kdialog --passivepopup "Preview requested" 2
+        ;;
+      reload)
+        "$CFG" reload >/dev/null
+        kdialog --passivepopup "Reload requested" 2
+        ;;
+      restore)
+        "$CFG" restore-all >/dev/null
+        kdialog --passivepopup "Restore-all requested" 2
+        ;;
+      import)
+        if out="$("$CFG" import-last-capture 2>&1)"; then
+          kdialog --msgbox "$out"
+        else
+          kdialog --error "$out"
+        fi
+        ;;
+      info)
+        kdialog --msgbox "Use System Settings → Window Management → KWin Scripts → Touch Slide Window → Configure → Overrides.\n\nOverride table columns:\nOn = enabled\nName = label only\nMatch = substring\nT = 0 class/resource, 1 title, 2 either, 3 both\nC = center\nS = resize\nW/H = 0 keep, 1-100 percent, 101+ pixels\n\nGitHub: https://github.com/ZythDr/Touch-Slide-Window-for-KDE-Plasma-6\n\nTo prefill a row: use titlebar menu → Touch Slide Window → Capture Window Info for Override, then use this helper's Import option."
+        ;;
+    esac
+  done
+else
+  cat <<'EOF'
+Touch Slide Window
+
+Use System Settings → Window Management → KWin Scripts → Touch Slide Window → Configure.
+Overrides are in the built-in Overrides tab.
+
+Commands:
+  touchslide-config list
+  touchslide-config preview
+  touchslide-config reload
+  touchslide-config restore-all
+EOF
+fi
