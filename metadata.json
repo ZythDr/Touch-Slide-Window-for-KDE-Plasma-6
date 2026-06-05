@@ -10,7 +10,7 @@
             }
         ],
         "Id": "touch-slide-window",
-        "Version": "0.50.3",
+        "Version": "0.50.4",
         "License": "GPLv3",
         "EnabledByDefault": false
     },

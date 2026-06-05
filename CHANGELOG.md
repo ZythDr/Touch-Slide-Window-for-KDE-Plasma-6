@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.50.4 - 2026-06-05
+
+- Reduced normal install/uninstall Plasma side effects by removing live KWin reconfigure calls, global shortcut service restarts, forced shortcut rewrites, and raw old-config cleanup from `install.sh` and `uninstall.sh`.
+- Removed uninstall's automatic restore-all request because it live-reconfigured KWin before removing the script.
+- Added `cleanup-old-installs.sh` for optional legacy versioned package/config cleanup when stale entries remain.
+
 ## 0.50.3 - 2026-06-05
 
 - Added a MouseTiler-style local selector flow for gesture docking in the existing JavaScript KWin script: four small target tiles around the drag-start cursor.

@@ -51,6 +51,12 @@ Then enable it here if needed:
 System Settings → Window Management → KWin Scripts → Touch Slide Window
 ```
 
+If old duplicate Touch Slide entries remain from versioned development builds, close System Settings and run:
+
+```bash
+./cleanup-old-installs.sh
+```
+
 ## Default shortcuts
 
 ```text
@@ -204,7 +210,7 @@ From the extracted folder:
 ./uninstall.sh
 ```
 
-This attempts to restore docked windows, remove the script, remove shortcut entries, and clean up old versioned installs.
+This removes the script package and helper commands without live-reloading KWin or restarting Plasma services. Restore docked windows before uninstalling if needed, then log out/in or reboot after uninstalling. If stale shortcut/config entries remain, close System Settings and run `./cleanup-old-installs.sh`.
 
 ## Notes
 

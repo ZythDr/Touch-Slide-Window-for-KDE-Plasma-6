@@ -775,7 +775,7 @@
          <layout class="QVBoxLayout" name="aboutBoxLayout">
           <item>
            <widget class="QLabel" name="label_about_version">
-            <property name="text"><string>&lt;html&gt;&lt;body&gt;&lt;p&gt;&lt;b&gt;Version:&lt;/b&gt; 0.50.3&lt;br/&gt;&lt;b&gt;Created:&lt;/b&gt; 2026-05-31&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string></property>
+            <property name="text"><string>&lt;html&gt;&lt;body&gt;&lt;p&gt;&lt;b&gt;Version:&lt;/b&gt; 0.50.4&lt;br/&gt;&lt;b&gt;Created:&lt;/b&gt; 2026-05-31&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string></property>
             <property name="alignment"><set>Qt::AlignCenter</set></property>
             <property name="wordWrap"><bool>true</bool></property>
            </widget>

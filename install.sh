@@ -6,8 +6,6 @@ DESKTOP_FILE="$HOME/.local/share/applications/touch-slide-window-settings.deskto
 BIN_DIR="$HOME/.local/bin"
 TARGET_GROUP="Script-touch-slide-window"
 
-OLD_IDS=(touch-slide-window touch-slide-window-v2 touch-slide-window-v3 touch-slide-window-v4 touch-slide-window-v5 touch-slide-window-v6 touch-slide-window-v7 touch-slide-window-v8 touch-slide-window-v9 touch-slide-window-v10 touch-slide-window-v11 touch-slide-window-v12 touch-slide-window-v13 touch-slide-window-v14 touch-slide-window-v15 touch-slide-window-v16 touch-slide-window-v17 touch-slide-window-v18 touch-slide-window-v19 touch-slide-window-v20 touch-slide-window-v21 touch-slide-window-v22 touch-slide-window-v23 touch-slide-window-v24 touch-slide-window-v25 touch-slide-window-v26 touch-slide-window-v27 touch-slide-window-v28 touch-slide-window-v29 touch-slide-window-v30 touch-slide-window-v31 touch-slide-window-v32 touch-slide-window-v33 touch-slide-window-v34 touch-slide-window-v35 touch-slide-window-v36 touch-slide-window-v37 touch-slide-window-v38 touch-slide-window-v39 touch-slide-window-v40 touch-slide-window-v41 touch-slide-window-v42 touch-slide-window-v43 touch-slide-window-v44 touch-slide-window-v45 touch-slide-window-v46 touch-slide-window-v47 touch-slide-window-v48 touch-slide-window-v49)
-
 CONFIG_KEYS=(
   visibleStripPixels
   revealGap
@@ -450,7 +448,8 @@ CONFIG_KEYS=(
   override50HeightValue
 )
 
-echo "Close System Settings before running this, or it may rewrite shortcut entries."
+echo "Installing Touch Slide Window with minimal Plasma config changes."
+echo "Close System Settings before running this, or it may rewrite script settings."
 
 echo "Preserving latest existing Touch Slide settings, if found..."
 MIGRATE_FILE="$(mktemp)"
@@ -470,52 +469,6 @@ for group in Script-touch-slide-window Script-touch-slide-window-v49 Script-touc
         break
     fi
 done
-
-echo "Stopping global shortcut service before editing shortcut config..."
-systemctl --user stop plasma-kglobalaccel.service >/dev/null 2>&1 || true
-kquitapp6 kglobalaccel >/dev/null 2>&1 || true
-sleep 1
-
-echo "Cleaning old Touch Slide KWin script packages..."
-installed_packages="$(kpackagetool6 --type=KWin/Script --list 2>/dev/null || true)"
-removed_any=false
-
-for id in "${OLD_IDS[@]}"; do
-    kwriteconfig6 --file kwinrc --group Plugins --key "${id}Enabled" false >/dev/null 2>&1 || true
-
-    if printf '%s\n' "$installed_packages" | grep -Fxq "$id"; then
-        if kpackagetool6 --type=KWin/Script --remove "$id" >/dev/null 2>&1; then
-            echo "  Removed package: $id"
-            removed_any=true
-        fi
-    fi
-
-    if [ -d "$HOME/.local/share/kwin/scripts/$id" ]; then
-        rm -rf "$HOME/.local/share/kwin/scripts/$id"
-        echo "  Removed script directory: $id"
-        removed_any=true
-    fi
-done
-
-if [ "$removed_any" = false ]; then
-    echo "  No old Touch Slide packages found."
-fi
-
-echo "Deleting stale Touch Slide shortcut rows..."
-if [ -f "$HOME/.config/kglobalshortcutsrc" ]; then
-    cp "$HOME/.config/kglobalshortcutsrc" "$HOME/.config/kglobalshortcutsrc.bak-touchslide-stable"
-    perl -0pi -e 's/^Touch Slide Window(?: V[0-9]+)?:[^\n]*\n//mg' "$HOME/.config/kglobalshortcutsrc"
-fi
-
-echo "Deleting stale Touch Slide plugin enable rows and old config sections..."
-if [ -f "$HOME/.config/kwinrc" ]; then
-    cp "$HOME/.config/kwinrc" "$HOME/.config/kwinrc.bak-touchslide-stable"
-    perl -0pi -e 's/^touch-slide-window(?:-v[0-9]+)?Enabled=[^\n]*\n//mg' "$HOME/.config/kwinrc"
-    perl -0pi -e 's/^\[Script-touch-slide-window(?:-v[0-9]+)?(?:\]\[[^\]]+\])?\]\n(?:[^\[].*\n)*//mg' "$HOME/.config/kwinrc"
-fi
-
-echo "Writing defaults..."
-"$SCRIPT_DIR/touchslide-config" defaults >/dev/null || true
 
 echo "Restoring preserved settings..."
 if [ -s "$MIGRATE_FILE" ]; then
@@ -540,45 +493,14 @@ mkdir -p "$HOME/.local/share/applications" "$BIN_DIR"
 ln -sfn "$SCRIPT_DIR/touchslide-settings" "$BIN_DIR/touchslide-settings"
 ln -sfn "$SCRIPT_DIR/touchslide-config" "$BIN_DIR/touchslide-config"
 rm -f "$DESKTOP_FILE"
-kbuildsycoca6 --noincremental >/dev/null 2>&1 || true
 
 echo "Installing KWin script: Touch Slide Window..."
-kpackagetool6 --type=KWin/Script --install "$SCRIPT_DIR" >/dev/null
+if ! kpackagetool6 --type=KWin/Script --upgrade "$SCRIPT_DIR" >/dev/null 2>&1; then
+    kpackagetool6 --type=KWin/Script --install "$SCRIPT_DIR" >/dev/null
+fi
 kwriteconfig6 --file kwinrc --group Plugins --key touch-slide-windowEnabled true
 
-echo "Writing stable Touch Slide shortcuts..."
-kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Dock Left" "Meta+Ctrl+Alt+Left,none,Touch Slide Window: Dock Left"
-kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Dock Right" "Meta+Ctrl+Alt+Right,none,Touch Slide Window: Dock Right"
-kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Dock Top" "Meta+Ctrl+Alt+Up,none,Touch Slide Window: Dock Top"
-kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Dock Bottom" "Meta+Ctrl+Alt+Down,none,Touch Slide Window: Dock Bottom"
-kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Reload Settings" "Meta+Ctrl+Alt+R,none,Touch Slide Window: Reload Settings"
-kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Test Attention Poke" "Meta+Ctrl+Alt+P,none,Touch Slide Window: Test Attention Poke"
-kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Arm Gesture Dock" "Meta+G,none,Touch Slide Window: Arm Gesture Dock"
-kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Restore All" "Meta+Ctrl+Alt+U,none,Touch Slide Window: Restore All"
-kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Open Settings" ",none,Touch Slide Window: Open Settings"
-
-systemctl --user start plasma-kglobalaccel.service >/dev/null 2>&1 || true
-systemctl --user restart plasma-kglobalaccel.service >/dev/null 2>&1 || true
-qdbus6 org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
-
-echo "Final shortcut cleanup pass..."
-systemctl --user stop plasma-kglobalaccel.service >/dev/null 2>&1 || true
-sleep 1
-if [ -f "$HOME/.config/kglobalshortcutsrc" ]; then
-    perl -0pi -e 's/^Touch Slide Window(?: V[0-9]+)?:[^\n]*\n//mg' "$HOME/.config/kglobalshortcutsrc"
-fi
-kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Dock Left" "Meta+Ctrl+Alt+Left,none,Touch Slide Window: Dock Left"
-kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Dock Right" "Meta+Ctrl+Alt+Right,none,Touch Slide Window: Dock Right"
-kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Dock Top" "Meta+Ctrl+Alt+Up,none,Touch Slide Window: Dock Top"
-kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Dock Bottom" "Meta+Ctrl+Alt+Down,none,Touch Slide Window: Dock Bottom"
-kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Reload Settings" "Meta+Ctrl+Alt+R,none,Touch Slide Window: Reload Settings"
-kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Test Attention Poke" "Meta+Ctrl+Alt+P,none,Touch Slide Window: Test Attention Poke"
-kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Arm Gesture Dock" "Meta+G,none,Touch Slide Window: Arm Gesture Dock"
-kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Restore All" "Meta+Ctrl+Alt+U,none,Touch Slide Window: Restore All"
-kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Open Settings" ",none,Touch Slide Window: Open Settings"
-systemctl --user start plasma-kglobalaccel.service >/dev/null 2>&1 || true
-systemctl --user restart plasma-kglobalaccel.service >/dev/null 2>&1 || true
-
 echo
-echo "Installed Touch Slide Window 0.50.3 with stable package ID: touch-slide-window"
-echo "Recommended: log out/in or reboot once after this update."
+echo "Installed Touch Slide Window 0.50.4 with stable package ID: touch-slide-window"
+echo "Log out/in or reboot once after this update to load it cleanly."
+echo "If you still have old duplicate entries, run ./cleanup-old-installs.sh manually."

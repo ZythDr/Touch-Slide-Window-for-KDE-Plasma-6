@@ -2,7 +2,7 @@
 /*
  * Touch Slide Window - experimental KWin script for Plasma 6.
  *
- * 0.50.3 stable-ID build:
+ * 0.50.4 stable-ID build:
  * - Prevents unrelated internal window removal from cancelling gesture docking.
  * - Keeps the v49 gesture settings load and outline refresh fixes.
  * - Keeps stable package ID: touch-slide-window.
