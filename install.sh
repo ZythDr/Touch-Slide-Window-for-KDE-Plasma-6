@@ -6,7 +6,7 @@ DESKTOP_FILE="$HOME/.local/share/applications/touch-slide-window-settings.deskto
 BIN_DIR="$HOME/.local/bin"
 TARGET_GROUP="Script-touch-slide-window"
 
-OLD_IDS=(touch-slide-window touch-slide-window-v2 touch-slide-window-v3 touch-slide-window-v4 touch-slide-window-v5 touch-slide-window-v6 touch-slide-window-v7 touch-slide-window-v8 touch-slide-window-v9 touch-slide-window-v10 touch-slide-window-v11 touch-slide-window-v12 touch-slide-window-v13 touch-slide-window-v14 touch-slide-window-v15 touch-slide-window-v16 touch-slide-window-v17 touch-slide-window-v18 touch-slide-window-v19 touch-slide-window-v20 touch-slide-window-v21 touch-slide-window-v22 touch-slide-window-v23 touch-slide-window-v24 touch-slide-window-v25 touch-slide-window-v26 touch-slide-window-v27 touch-slide-window-v28 touch-slide-window-v29 touch-slide-window-v30 touch-slide-window-v31 touch-slide-window-v32 touch-slide-window-v33 touch-slide-window-v34 touch-slide-window-v35 touch-slide-window-v36 touch-slide-window-v37 touch-slide-window-v38 touch-slide-window-v39 touch-slide-window-v40 touch-slide-window-v41)
+OLD_IDS=(touch-slide-window touch-slide-window-v2 touch-slide-window-v3 touch-slide-window-v4 touch-slide-window-v5 touch-slide-window-v6 touch-slide-window-v7 touch-slide-window-v8 touch-slide-window-v9 touch-slide-window-v10 touch-slide-window-v11 touch-slide-window-v12 touch-slide-window-v13 touch-slide-window-v14 touch-slide-window-v15 touch-slide-window-v16 touch-slide-window-v17 touch-slide-window-v18 touch-slide-window-v19 touch-slide-window-v20 touch-slide-window-v21 touch-slide-window-v22 touch-slide-window-v23 touch-slide-window-v24 touch-slide-window-v25 touch-slide-window-v26 touch-slide-window-v27 touch-slide-window-v28 touch-slide-window-v29 touch-slide-window-v30 touch-slide-window-v31 touch-slide-window-v32 touch-slide-window-v33 touch-slide-window-v34 touch-slide-window-v35 touch-slide-window-v36 touch-slide-window-v37 touch-slide-window-v38 touch-slide-window-v39 touch-slide-window-v40 touch-slide-window-v41 touch-slide-window-v42 touch-slide-window-v43 touch-slide-window-v44 touch-slide-window-v45 touch-slide-window-v46 touch-slide-window-v47 touch-slide-window-v48 touch-slide-window-v49)
 
 CONFIG_KEYS=(
   visibleStripPixels
@@ -21,6 +21,18 @@ CONFIG_KEYS=(
   suppressMinimizeFallback
   allowMoveAlongDockEdge
   hideOnDockEdgeHit
+  gestureDockEnabled
+  gestureDockMode
+  gestureDockThresholdPx
+  gestureDockTimeoutMs
+  gestureDockConeDegrees
+  gestureIndicatorEnabled
+  gestureSelectorMode
+  gestureSelectorDistancePx
+  gestureSelectorTileSizePx
+  gestureSelectorMarginPx
+  dockHintMode
+  dockHintDelayMs
   attentionPokeEnabled
   attentionPokeMode
   attentionPokePixels
@@ -444,7 +456,7 @@ echo "Preserving latest existing Touch Slide settings, if found..."
 MIGRATE_FILE="$(mktemp)"
 LEGACY_FIT_PERCENT=""
 
-for group in Script-touch-slide-window Script-touch-slide-window-v41 Script-touch-slide-window-v40 Script-touch-slide-window-v39 Script-touch-slide-window-v38 Script-touch-slide-window-v37 Script-touch-slide-window-v36 Script-touch-slide-window-v35 Script-touch-slide-window-v34 Script-touch-slide-window-v33 Script-touch-slide-window-v32 Script-touch-slide-window-v31 Script-touch-slide-window-v30 Script-touch-slide-window-v29 Script-touch-slide-window-v28 Script-touch-slide-window-v27 Script-touch-slide-window-v26 Script-touch-slide-window-v25 Script-touch-slide-window-v24 Script-touch-slide-window-v23 Script-touch-slide-window-v22 Script-touch-slide-window-v21 Script-touch-slide-window-v20 Script-touch-slide-window-v19 Script-touch-slide-window-v18 Script-touch-slide-window-v17 Script-touch-slide-window-v16 Script-touch-slide-window-v15 Script-touch-slide-window-v14; do
+for group in Script-touch-slide-window Script-touch-slide-window-v49 Script-touch-slide-window-v48 Script-touch-slide-window-v47 Script-touch-slide-window-v46 Script-touch-slide-window-v45 Script-touch-slide-window-v44 Script-touch-slide-window-v43 Script-touch-slide-window-v42 Script-touch-slide-window-v41 Script-touch-slide-window-v40 Script-touch-slide-window-v39 Script-touch-slide-window-v38 Script-touch-slide-window-v37 Script-touch-slide-window-v36 Script-touch-slide-window-v35 Script-touch-slide-window-v34 Script-touch-slide-window-v33 Script-touch-slide-window-v32 Script-touch-slide-window-v31 Script-touch-slide-window-v30 Script-touch-slide-window-v29 Script-touch-slide-window-v28 Script-touch-slide-window-v27 Script-touch-slide-window-v26 Script-touch-slide-window-v25 Script-touch-slide-window-v24 Script-touch-slide-window-v23 Script-touch-slide-window-v22 Script-touch-slide-window-v21 Script-touch-slide-window-v20 Script-touch-slide-window-v19 Script-touch-slide-window-v18 Script-touch-slide-window-v17 Script-touch-slide-window-v16 Script-touch-slide-window-v15 Script-touch-slide-window-v14; do
     test_value="$(kreadconfig6 --file kwinrc --group "$group" --key visibleStripPixels 2>/dev/null || true)"
     if [ -n "$test_value" ]; then
         LEGACY_FIT_PERCENT="$(kreadconfig6 --file kwinrc --group "$group" --key fitOnDockPercent 2>/dev/null || true)"
@@ -523,23 +535,11 @@ fi
 
 kwriteconfig6 --file kwinrc --group "$TARGET_GROUP" --key settingsCommand "$SCRIPT_DIR/touchslide-settings"
 
-echo "Installing settings desktop launcher..."
+echo "Installing settings helper commands..."
 mkdir -p "$HOME/.local/share/applications" "$BIN_DIR"
 ln -sfn "$SCRIPT_DIR/touchslide-settings" "$BIN_DIR/touchslide-settings"
 ln -sfn "$SCRIPT_DIR/touchslide-config" "$BIN_DIR/touchslide-config"
-
-cat > "$DESKTOP_FILE" <<EOF
-[Desktop Entry]
-Type=Application
-Name=Touch Slide Window Settings
-Comment=Configure Touch Slide Window
-Exec=$SCRIPT_DIR/touchslide-settings
-Icon=preferences-system-windows
-Terminal=false
-Categories=Settings;Utility;
-EOF
-
-chmod +x "$DESKTOP_FILE"
+rm -f "$DESKTOP_FILE"
 kbuildsycoca6 --noincremental >/dev/null 2>&1 || true
 
 echo "Installing KWin script: Touch Slide Window..."
@@ -553,9 +553,9 @@ kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: 
 kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Dock Bottom" "Meta+Ctrl+Alt+Down,none,Touch Slide Window: Dock Bottom"
 kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Reload Settings" "Meta+Ctrl+Alt+R,none,Touch Slide Window: Reload Settings"
 kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Test Attention Poke" "Meta+Ctrl+Alt+P,none,Touch Slide Window: Test Attention Poke"
+kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Arm Gesture Dock" "Meta+G,none,Touch Slide Window: Arm Gesture Dock"
 kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Restore All" "Meta+Ctrl+Alt+U,none,Touch Slide Window: Restore All"
-kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Open Settings Helper" ",none,Touch Slide Window: Open Settings Helper"
-kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Capture Override Info" ",none,Touch Slide Window: Capture Override Info"
+kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Open Settings" ",none,Touch Slide Window: Open Settings"
 
 systemctl --user start plasma-kglobalaccel.service >/dev/null 2>&1 || true
 systemctl --user restart plasma-kglobalaccel.service >/dev/null 2>&1 || true
@@ -573,12 +573,12 @@ kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: 
 kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Dock Bottom" "Meta+Ctrl+Alt+Down,none,Touch Slide Window: Dock Bottom"
 kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Reload Settings" "Meta+Ctrl+Alt+R,none,Touch Slide Window: Reload Settings"
 kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Test Attention Poke" "Meta+Ctrl+Alt+P,none,Touch Slide Window: Test Attention Poke"
+kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Arm Gesture Dock" "Meta+G,none,Touch Slide Window: Arm Gesture Dock"
 kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Restore All" "Meta+Ctrl+Alt+U,none,Touch Slide Window: Restore All"
-kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Open Settings Helper" ",none,Touch Slide Window: Open Settings Helper"
-kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Capture Override Info" ",none,Touch Slide Window: Capture Override Info"
+kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Open Settings" ",none,Touch Slide Window: Open Settings"
 systemctl --user start plasma-kglobalaccel.service >/dev/null 2>&1 || true
 systemctl --user restart plasma-kglobalaccel.service >/dev/null 2>&1 || true
 
 echo
-echo "Installed Touch Slide Window 0.42.0 with stable package ID: touch-slide-window"
+echo "Installed Touch Slide Window 0.50.3 with stable package ID: touch-slide-window"
 echo "Recommended: log out/in or reboot once after this update."

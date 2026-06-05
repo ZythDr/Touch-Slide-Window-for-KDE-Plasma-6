@@ -12,10 +12,22 @@
         <entry name="animate" type="Bool"><default>true</default></entry>
         <entry name="animationSteps" type="Int"><default>12</default><min>1</min><max>80</max></entry>
         <entry name="animationIntervalMs" type="Int"><default>14</default><min>1</min><max>100</max></entry>
+        <entry name="dockHintMode" type="Int"><default>2</default><min>0</min><max>3</max></entry>
+        <entry name="dockHintDelayMs" type="Int"><default>500</default><min>0</min><max>5000</max></entry>
         <entry name="dockToVirtualScreenEdges" type="Bool"><default>true</default></entry>
         <entry name="suppressMinimizeFallback" type="Bool"><default>true</default></entry>
         <entry name="allowMoveAlongDockEdge" type="Bool"><default>true</default></entry>
         <entry name="hideOnDockEdgeHit" type="Bool"><default>false</default></entry>
+        <entry name="gestureDockEnabled" type="Bool"><default>false</default></entry>
+        <entry name="gestureDockMode" type="Int"><default>0</default><min>0</min><max>1</max></entry>
+        <entry name="gestureDockThresholdPx" type="Int"><default>20</default><min>1</min><max>500</max></entry>
+        <entry name="gestureDockTimeoutMs" type="Int"><default>2500</default><min>250</min><max>10000</max></entry>
+        <entry name="gestureDockConeDegrees" type="Int"><default>35</default><min>10</min><max>44</max></entry>
+        <entry name="gestureIndicatorEnabled" type="Bool"><default>true</default></entry>
+        <entry name="gestureSelectorMode" type="Int"><default>1</default><min>0</min><max>1</max></entry>
+        <entry name="gestureSelectorDistancePx" type="Int"><default>78</default><min>24</min><max>300</max></entry>
+        <entry name="gestureSelectorTileSizePx" type="Int"><default>54</default><min>18</min><max>180</max></entry>
+        <entry name="gestureSelectorMarginPx" type="Int"><default>10</default><min>0</min><max>80</max></entry>
         <entry name="resizeOnDockEnabled" type="Bool"><default>false</default></entry>
         <entry name="centerOnDockEnabled" type="Bool"><default>false</default></entry>
         <entry name="defaultResizeWidthValue" type="Int"><default>0</default><min>0</min><max>9999</max></entry>

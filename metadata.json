@@ -2,7 +2,7 @@
     "KPackageStructure": "KWin/Script",
     "KPlugin": {
         "Name": "Touch Slide Window",
-        "Description": "Touch Slide Window stable-ID build with About tab and refined overrides UI.",
+        "Description": "Touch Slide Window stable-ID build with improved gesture docking.",
         "Icon": "preferences-system-windows",
         "Authors": [
             {
@@ -10,7 +10,7 @@
             }
         ],
         "Id": "touch-slide-window",
-        "Version": "0.42.0",
+        "Version": "0.50.3",
         "License": "GPLv3",
         "EnabledByDefault": false
     },

@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 DESKTOP_FILE="$HOME/.local/share/applications/touch-slide-window-settings.desktop"
-OLD_IDS=(touch-slide-window touch-slide-window-v2 touch-slide-window-v3 touch-slide-window-v4 touch-slide-window-v5 touch-slide-window-v6 touch-slide-window-v7 touch-slide-window-v8 touch-slide-window-v9 touch-slide-window-v10 touch-slide-window-v11 touch-slide-window-v12 touch-slide-window-v13 touch-slide-window-v14 touch-slide-window-v15 touch-slide-window-v16 touch-slide-window-v17 touch-slide-window-v18 touch-slide-window-v19 touch-slide-window-v20 touch-slide-window-v21 touch-slide-window-v22 touch-slide-window-v23 touch-slide-window-v24 touch-slide-window-v25 touch-slide-window-v26 touch-slide-window-v27 touch-slide-window-v28 touch-slide-window-v29 touch-slide-window-v30 touch-slide-window-v31 touch-slide-window-v32 touch-slide-window-v33 touch-slide-window-v34 touch-slide-window-v35 touch-slide-window-v36 touch-slide-window-v37 touch-slide-window-v38 touch-slide-window-v39 touch-slide-window-v40 touch-slide-window-v41)
+OLD_IDS=(touch-slide-window touch-slide-window-v2 touch-slide-window-v3 touch-slide-window-v4 touch-slide-window-v5 touch-slide-window-v6 touch-slide-window-v7 touch-slide-window-v8 touch-slide-window-v9 touch-slide-window-v10 touch-slide-window-v11 touch-slide-window-v12 touch-slide-window-v13 touch-slide-window-v14 touch-slide-window-v15 touch-slide-window-v16 touch-slide-window-v17 touch-slide-window-v18 touch-slide-window-v19 touch-slide-window-v20 touch-slide-window-v21 touch-slide-window-v22 touch-slide-window-v23 touch-slide-window-v24 touch-slide-window-v25 touch-slide-window-v26 touch-slide-window-v27 touch-slide-window-v28 touch-slide-window-v29 touch-slide-window-v30 touch-slide-window-v31 touch-slide-window-v32 touch-slide-window-v33 touch-slide-window-v34 touch-slide-window-v35 touch-slide-window-v36 touch-slide-window-v37 touch-slide-window-v38 touch-slide-window-v39 touch-slide-window-v40 touch-slide-window-v41 touch-slide-window-v42 touch-slide-window-v43 touch-slide-window-v44 touch-slide-window-v45 touch-slide-window-v46 touch-slide-window-v47 touch-slide-window-v48 touch-slide-window-v49)
 
 echo "Requesting restore-all before disabling..."
 if [ -x "$SCRIPT_DIR/touchslide-config" ]; then
@@ -51,4 +51,4 @@ systemctl --user start plasma-kglobalaccel.service >/dev/null 2>&1 || true
 systemctl --user restart plasma-kglobalaccel.service >/dev/null 2>&1 || true
 qdbus6 org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
 
-echo "Removed Touch Slide Window scripts, shortcuts, and settings launcher."
+echo "Removed Touch Slide Window scripts, shortcuts, helper commands, and old settings launcher if present."

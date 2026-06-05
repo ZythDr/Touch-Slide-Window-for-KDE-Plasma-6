@@ -2,7 +2,7 @@
 <ui version="4.0">
  <class>TouchSlideWindowConfig</class>
  <widget class="QWidget" name="TouchSlideWindowConfig">
-  <property name="minimumSize"><size><width>900</width><height>600</height></size></property>
+  <property name="minimumSize"><size><width>900</width><height>520</height></size></property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
     <widget class="QLabel" name="label_header">
@@ -84,6 +84,11 @@
           <item row="1" column="0"><widget class="QLabel" name="label_steps"><property name="text"><string>Animation steps</string></property><property name="toolTip"><string>Number of movement steps for normal reveal/hide animation.</string></property></widget></item>
           <item row="1" column="1"><widget class="QSpinBox" name="kcfg_animationSteps"><property name="toolTip"><string>More steps is smoother but slower.</string></property><property name="minimum"><number>1</number></property><property name="maximum"><number>80</number></property></widget></item>
           <item row="2" column="0"><widget class="QLabel" name="label_interval"><property name="text"><string>Animation interval</string></property><property name="toolTip"><string>Delay between normal animation steps.</string></property></widget></item>
+          
+          <item row="3" column="0"><widget class="QLabel" name="label_dockHintMode"><property name="text"><string>Dock hint mode</string></property><property name="toolTip"><string>0=instant hidden, 1=animate to hidden, 2=show then stow, 3=attention poke after dock.</string></property></widget></item>
+          <item row="3" column="1"><widget class="QSpinBox" name="kcfg_dockHintMode"><property name="toolTip"><string>0=instant hidden, 1=animate directly to stowed position, 2=show at edge then stow, 3=stow then attention poke.</string></property><property name="minimum"><number>0</number></property><property name="maximum"><number>3</number></property><property name="maximumSize"><size><width>80</width><height>16777215</height></size></property></widget></item>
+          <item row="4" column="0"><widget class="QLabel" name="label_dockHintDelay"><property name="text"><string>Dock hint delay</string></property><property name="toolTip"><string>Delay before the stow/poke hint runs after docking.</string></property></widget></item>
+          <item row="4" column="1"><widget class="QSpinBox" name="kcfg_dockHintDelayMs"><property name="suffix"><string> ms</string></property><property name="minimum"><number>0</number></property><property name="maximum"><number>5000</number></property><property name="singleStep"><number>100</number></property><property name="maximumSize"><size><width>120</width><height>16777215</height></size></property></widget></item>
           <item row="2" column="1"><widget class="QSpinBox" name="kcfg_animationIntervalMs"><property name="toolTip"><string>Lower values move faster.</string></property><property name="suffix"><string> ms</string></property><property name="minimum"><number>1</number></property><property name="maximum"><number>100</number></property></widget></item>
          </layout>
         </widget>
@@ -597,6 +602,170 @@
       </layout>
      </widget>
 
+
+     <widget class="QWidget" name="tabGestures">
+      <attribute name="title"><string>Gestures</string></attribute>
+      <layout class="QVBoxLayout" name="gesturesLayout">
+       <item>
+        <widget class="QGroupBox" name="groupGestureDock">
+         <property name="title"><string>Dock by drag gesture</string></property>
+         <layout class="QFormLayout" name="formGestureDock">
+          <property name="formAlignment"><set>Qt::AlignHCenter|Qt::AlignTop</set></property>
+          <property name="labelAlignment"><set>Qt::AlignRight</set></property>
+          <item row="0" column="0">
+           <widget class="QLabel" name="label_gestureEnabled">
+            <property name="text"><string>Enable gesture docking</string></property>
+            <property name="toolTip"><string>Allows docking a window by dragging it far enough in one direction during a KWin interactive move.</string></property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QCheckBox" name="kcfg_gestureDockEnabled">
+            <property name="toolTip"><string>Default mode is armed-only so normal titlebar dragging is not hijacked.</string></property>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="label_gestureMode">
+            <property name="text"><string>Activation mode</string></property>
+            <property name="toolTip"><string>0 = only after the Arm Gesture Dock shortcut/menu action. 1 = any interactive window move.</string></property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QSpinBox" name="kcfg_gestureDockMode">
+            <property name="toolTip"><string>0 = armed shortcut/menu only. 1 = any interactive move. Single modifier-only keys are not exposed as held-state to normal KWin scripts.</string></property>
+            <property name="minimum"><number>0</number></property>
+            <property name="maximum"><number>1</number></property>
+            <property name="maximumSize"><size><width>80</width><height>16777215</height></size></property>
+           </widget>
+          </item>
+          <item row="2" column="0">
+           <widget class="QLabel" name="label_gestureThreshold">
+            <property name="text"><string>Direction threshold</string></property>
+            <property name="toolTip"><string>How far the cursor must move from the drag start before a direction is selected.</string></property>
+           </widget>
+          </item>
+          <item row="2" column="1">
+           <widget class="QSpinBox" name="kcfg_gestureDockThresholdPx">
+            <property name="suffix"><string> px</string></property>
+            <property name="minimum"><number>1</number></property>
+            <property name="maximum"><number>500</number></property>
+            <property name="maximumSize"><size><width>100</width><height>16777215</height></size></property>
+           </widget>
+          </item>
+          <item row="3" column="0">
+           <widget class="QLabel" name="label_gestureCone">
+            <property name="text"><string>Direction cone</string></property>
+            <property name="toolTip"><string>Degrees around each cardinal direction that count as a valid gesture. After a direction is selected, diagonal drag jitter keeps the current direction.</string></property>
+           </widget>
+          </item>
+          <item row="3" column="1">
+           <widget class="QSpinBox" name="kcfg_gestureDockConeDegrees">
+            <property name="suffix"><string>°</string></property>
+            <property name="minimum"><number>10</number></property>
+            <property name="maximum"><number>44</number></property>
+            <property name="maximumSize"><size><width>100</width><height>16777215</height></size></property>
+           </widget>
+          </item>
+          <item row="4" column="0">
+           <widget class="QLabel" name="label_gestureIndicator">
+            <property name="text"><string>Show direction indicator</string></property>
+            <property name="toolTip"><string>Shows a KWin outline for the currently selected gesture target.</string></property>
+           </widget>
+          </item>
+          <item row="4" column="1">
+           <widget class="QCheckBox" name="kcfg_gestureIndicatorEnabled">
+            <property name="toolTip"><string>Uses KWin's built-in outline overlay. If unsupported by your KWin build, gesture docking still works without the indicator.</string></property>
+           </widget>
+          </item>
+          <item row="5" column="0">
+           <widget class="QLabel" name="label_gestureSelectorMode">
+            <property name="text"><string>Selector style</string></property>
+            <property name="toolTip"><string>0 = edge preview (legacy), 1 = cursor popup selector tiles (MouseTiler-like).</string></property>
+           </widget>
+          </item>
+          <item row="5" column="1">
+           <widget class="QSpinBox" name="kcfg_gestureSelectorMode">
+            <property name="toolTip"><string>Use 1 for local popup-style tile selection near the drag start cursor.</string></property>
+            <property name="minimum"><number>0</number></property>
+            <property name="maximum"><number>1</number></property>
+            <property name="maximumSize"><size><width>80</width><height>16777215</height></size></property>
+           </widget>
+          </item>
+          <item row="6" column="0">
+           <widget class="QLabel" name="label_gestureSelectorDistance">
+            <property name="text"><string>Tile distance</string></property>
+            <property name="toolTip"><string>Distance from drag-start cursor to each selector tile center.</string></property>
+           </widget>
+          </item>
+          <item row="6" column="1">
+           <widget class="QSpinBox" name="kcfg_gestureSelectorDistancePx">
+            <property name="suffix"><string> px</string></property>
+            <property name="minimum"><number>24</number></property>
+            <property name="maximum"><number>300</number></property>
+            <property name="maximumSize"><size><width>100</width><height>16777215</height></size></property>
+           </widget>
+          </item>
+          <item row="7" column="0">
+           <widget class="QLabel" name="label_gestureSelectorTileSize">
+            <property name="text"><string>Tile size</string></property>
+            <property name="toolTip"><string>Size of each local selector tile.</string></property>
+           </widget>
+          </item>
+          <item row="7" column="1">
+           <widget class="QSpinBox" name="kcfg_gestureSelectorTileSizePx">
+            <property name="suffix"><string> px</string></property>
+            <property name="minimum"><number>18</number></property>
+            <property name="maximum"><number>180</number></property>
+            <property name="maximumSize"><size><width>100</width><height>16777215</height></size></property>
+           </widget>
+          </item>
+          <item row="8" column="0">
+           <widget class="QLabel" name="label_gestureSelectorMargin">
+            <property name="text"><string>Tile hover margin</string></property>
+            <property name="toolTip"><string>Extra hover margin around local selector tiles.</string></property>
+           </widget>
+          </item>
+          <item row="8" column="1">
+           <widget class="QSpinBox" name="kcfg_gestureSelectorMarginPx">
+            <property name="suffix"><string> px</string></property>
+            <property name="minimum"><number>0</number></property>
+            <property name="maximum"><number>80</number></property>
+            <property name="maximumSize"><size><width>100</width><height>16777215</height></size></property>
+           </widget>
+          </item>
+          <item row="9" column="0">
+           <widget class="QLabel" name="label_gestureTimeout">
+            <property name="text"><string>Armed timeout</string></property>
+            <property name="toolTip"><string>How long the Arm Gesture Dock shortcut/menu action stays active.</string></property>
+           </widget>
+          </item>
+          <item row="9" column="1">
+           <widget class="QSpinBox" name="kcfg_gestureDockTimeoutMs">
+            <property name="suffix"><string> ms</string></property>
+            <property name="minimum"><number>250</number></property>
+            <property name="maximum"><number>10000</number></property>
+            <property name="singleStep"><number>250</number></property>
+            <property name="maximumSize"><size><width>120</width><height>16777215</height></size></property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+       <widget class="QLabel" name="label_gestureHelp">
+         <property name="text"><string>&lt;html&gt;&lt;body&gt;&lt;p&gt;&lt;b&gt;Recommended:&lt;/b&gt; set Selector style to &lt;b&gt;1&lt;/b&gt; for local popup tiles, leave Activation mode at 0, bind &lt;b&gt;Touch Slide Window: Arm Gesture Dock&lt;/b&gt; in KDE Shortcuts, press it, then drag a titlebar/window over one of the local tiles and release.&lt;/p&gt;&lt;p&gt;KWin scripts can detect interactive window moves, but they cannot reliably read “Alt/Shift/Ctrl/Meta is currently held” or panel/taskbar clicks as a global gesture. Pure modifier-only global shortcuts are also not reliable here. If KDE Window Actions is configured so Alt+left-drag moves windows, Activation mode 1 can gesture-dock from that move, but Touch Slide Window still cannot know Alt was the trigger.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string></property>
+         <property name="wordWrap"><bool>true</bool></property>
+         <property name="alignment"><set>Qt::AlignCenter</set></property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="gestureSpacer">
+         <property name="orientation"><enum>Qt::Vertical</enum></property>
+         <property name="sizeHint" stdset="0"><size><width>20</width><height>200</height></size></property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+
      <widget class="QWidget" name="tabAbout">
       <attribute name="title"><string>About</string></attribute>
       <layout class="QVBoxLayout" name="aboutLayout">
@@ -606,7 +775,7 @@
          <layout class="QVBoxLayout" name="aboutBoxLayout">
           <item>
            <widget class="QLabel" name="label_about_version">
-            <property name="text"><string>&lt;html&gt;&lt;body&gt;&lt;p&gt;&lt;b&gt;Version:&lt;/b&gt; 0.42.0&lt;br/&gt;&lt;b&gt;Created:&lt;/b&gt; 2026-05-29&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string></property>
+            <property name="text"><string>&lt;html&gt;&lt;body&gt;&lt;p&gt;&lt;b&gt;Version:&lt;/b&gt; 0.50.3&lt;br/&gt;&lt;b&gt;Created:&lt;/b&gt; 2026-05-31&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string></property>
             <property name="alignment"><set>Qt::AlignCenter</set></property>
             <property name="wordWrap"><bool>true</bool></property>
            </widget>

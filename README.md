@@ -15,6 +15,7 @@ Touch Slide Window lets you:
 - hide them again when the cursor leaves
 - optionally resize/center windows when docking
 - set per-app/window override rules
+- dock by a shortcut-armed drag gesture
 - trigger a small notification/attention “poke” animation for docked apps
 
 This is mostly meant as an Alt-Tab companion for apps you want quick access to without keeping them fully visible.
@@ -57,6 +58,7 @@ Meta + Ctrl + Alt + Left   Dock left
 Meta + Ctrl + Alt + Right  Dock right
 Meta + Ctrl + Alt + Up     Dock top
 Meta + Ctrl + Alt + Down   Dock bottom
+Meta + G                   Arm gesture dock
 Meta + Ctrl + Alt + R      Reload settings
 Meta + Ctrl + Alt + P      Preview notification poke
 Meta + Ctrl + Alt + U      Restore all docked windows
@@ -93,7 +95,19 @@ You can also use the titlebar context menu:
 Right-click titlebar → Touch Slide Window
 ```
 
-From there you can dock, undock, reload settings, preview the notification poke, or restore all docked windows.
+From there you can dock, undock, arm gesture docking, reload settings, preview the notification poke, or restore all docked windows.
+
+## Gesture Docking
+
+Gesture docking is shortcut-armed by default so normal titlebar dragging is not hijacked.
+
+1. Press `Meta + G`.
+2. Drag a titlebar or window over one of the local selector tiles near the drag-start cursor.
+3. Release the drag while a tile is selected.
+
+The default selector style is now a cursor-local popup tile selector (left/right/top/bottom) so you do not need to move all the way to a screen edge. The old edge-preview style is still available in Gestures settings.
+
+`Alt + left-drag` can also work if KDE's Window Actions setting maps that input to moving windows and Gesture Docking uses Activation mode `1`. KWin scripts only receive the resulting interactive move; they cannot reliably tell that Alt, Meta, or a taskbar click caused it.
 
 ## Settings
 
@@ -109,6 +123,8 @@ The main settings include:
 - reveal gap
 - hover/leave margins
 - slide animation speed
+- dock hint behavior
+- gesture docking behavior
 - notification poke behavior
 - resize/center-on-dock behavior
 - per-app/window overrides
@@ -161,27 +177,6 @@ Width/height values:
 
 First enabled matching row wins.
 
-## Capturing window info for overrides
-
-To help fill an override rule:
-
-1. Right-click the target window titlebar.
-2. Choose:
-
-```text
-Touch Slide Window → Capture Window Info for Override
-```
-
-3. Then run:
-
-```bash
-touchslide-config import-last-capture
-```
-
-4. Reopen the config GUI. The first empty override row should be prefilled.
-
-The row is left disabled by default so it does not accidentally change behavior until you enable it.
-
 ## Helper commands
 
 The installer adds helper commands if possible:
@@ -191,9 +186,15 @@ touchslide-config list
 touchslide-config reload
 touchslide-config preview
 touchslide-config restore-all
-touchslide-config import-last-capture
+touchslide-config gui
 touchslide-settings
 ```
+
+`touchslide-config gui` opens the native KWin script config dialog when Plasma exposes it. `touchslide-settings` is only a fallback helper and is not installed as an app-launcher entry.
+
+## Changelog
+
+Release notes are kept in [CHANGELOG.md](CHANGELOG.md).
 
 ## Uninstall
 
@@ -207,6 +208,6 @@ This attempts to restore docked windows, remove the script, remove shortcut entr
 
 ## Notes
 
-This is experimental and uses KWin’s JavaScript scripting API. Some things are limited by what KWin scripts can access. For example, the script can read its own config, register shortcuts, move windows, and add titlebar menu actions, but it cannot directly open the native KWin script config page or write config rows from inside the KWin titlebar menu action.
+This is experimental and uses KWin’s JavaScript scripting API. Some things are limited by what KWin scripts can access. For example, the script can read its own config, register shortcuts, move windows, add titlebar menu actions, and request KDE to open the native config dialog, but it cannot directly write config rows from inside the KWin titlebar menu action.
 
 If something behaves weirdly after installing or updating, log out/in or reboot once. KWin can keep old script instances around until the session restarts.

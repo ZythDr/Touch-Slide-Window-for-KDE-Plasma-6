@@ -13,7 +13,6 @@ if command -v kdialog >/dev/null 2>&1; then
       preview "Preview notification poke" \
       reload "Reload settings" \
       restore "Restore all docked windows" \
-      import "Import last captured window into override row" \
       info "Override help" 2>/dev/null)" || exit 0
     case "$choice" in
       list)
@@ -33,15 +32,8 @@ if command -v kdialog >/dev/null 2>&1; then
         "$CFG" restore-all >/dev/null
         kdialog --passivepopup "Restore-all requested" 2
         ;;
-      import)
-        if out="$("$CFG" import-last-capture 2>&1)"; then
-          kdialog --msgbox "$out"
-        else
-          kdialog --error "$out"
-        fi
-        ;;
       info)
-        kdialog --msgbox "Use System Settings → Window Management → KWin Scripts → Touch Slide Window → Configure → Overrides.\n\nOverride table columns:\nOn = enabled\nName = label only\nMatch = substring\nT = 0 class/resource, 1 title, 2 either, 3 both\nC = center\nS = resize\nW/H = 0 keep, 1-100 percent, 101+ pixels\n\nGitHub: https://github.com/ZythDr/Touch-Slide-Window-for-KDE-Plasma-6\n\nTo prefill a row: use titlebar menu → Touch Slide Window → Capture Window Info for Override, then use this helper's Import option."
+        kdialog --msgbox "Use System Settings → Window Management → KWin Scripts → Touch Slide Window → Configure → Overrides.\n\nOverride table columns:\nOn = enabled\nName = label only\nMatch = substring\nT = 0 class/resource, 1 title, 2 either, 3 both\nC = center\nS = resize\nW/H = 0 keep, 1-100 percent, 101+ pixels\n\nGitHub: https://github.com/ZythDr/Touch-Slide-Window-for-KDE-Plasma-6"
         ;;
     esac
   done

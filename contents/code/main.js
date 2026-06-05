@@ -2,11 +2,11 @@
 /*
  * Touch Slide Window - experimental KWin script for Plasma 6.
  *
- * 0.42.0 stable-ID build:
- * - Adds an About tab in the config UI.
- * - Refines override table stretch behavior.
- * - Adds user-configurable capture/settings-helper shortcut entries.
+ * 0.50.3 stable-ID build:
+ * - Prevents unrelated internal window removal from cancelling gesture docking.
+ * - Keeps the v49 gesture settings load and outline refresh fixes.
  * - Keeps stable package ID: touch-slide-window.
+ * - Adds cursor-centered local selector tiles for gesture docking (MouseTiler-style flow).
  */
 
 /* ===== Defaults; values are reloaded from KWin script config at runtime ===== */
@@ -48,6 +48,7 @@ var APP_OVERRIDES = [];
 
 var stowed = [];
 var lastNonDockedFocus = null;
+var lastFullscreenFocus = null;
 var suppressActivationHandling = false;
 var suppressFocusRevealUntil = 0;
 var suppressFocusRevealReason = "";
@@ -57,6 +58,31 @@ var lastSettingsSignature = "";
 var lastAttentionPreviewCounter = -1;
 var lastRestoreAllCounter = -1;
 var settingsPollTimer = null;
+
+var GESTURE_DOCK_ENABLED = false;
+var GESTURE_DOCK_MODE = 1; // 0=armed shortcut only, 1=any interactive move
+var GESTURE_DOCK_THRESHOLD_PX = 20;
+var GESTURE_DOCK_TIMEOUT_MS = 2500;
+var GESTURE_DOCK_CONE_DEGREES = 35;
+var GESTURE_INDICATOR_ENABLED = true;
+var GESTURE_SELECTOR_MODE = 1; // 0=edge strip preview, 1=cursor-centered popup tiles
+var GESTURE_SELECTOR_DISTANCE_PX = 78;
+var GESTURE_SELECTOR_TILE_SIZE_PX = 54;
+var GESTURE_SELECTOR_MARGIN_PX = 10;
+var DOCK_HINT_MODE = 2; // 0=instant hidden, 1=animate to hidden, 2=show then stow, 3=attention poke after dock
+var DOCK_HINT_DELAY_MS = 500;
+var gestureArmedUntil = 0;
+var gestureActive = null;
+var gestureConnected = {};
+var gestureIndicatorAvailable = true;
+var gestureIndicatorRefreshTimer = null;
+var GESTURE_INDICATOR_REFRESH_MS = 80;
+
+var focusRevealTimer = null;
+var pendingFocusRevealEntry = null;
+var pendingFocusRevealPrevious = null;
+var FOCUS_REVEAL_DELAY_MS = 220;
+var NEW_WINDOW_SUPPRESS_MS = 1500;
 
 function log(msg) { print("[TouchSlideWindow] " + msg); }
 
@@ -100,6 +126,25 @@ function windowClassText(win) {
 function windowTitleText(win) {
     try { return String(win.caption || "").toLowerCase(); } catch (e) {}
     return "";
+}
+
+
+function isFullscreenWindow(win) {
+    try { return !!win.fullScreen; } catch (e) {}
+    return false;
+}
+
+function rememberNonDockedFocus(win, reason) {
+    if (!win || !isFocusableWindow(win) || isDockedWindow(win)) return;
+
+    lastNonDockedFocus = win;
+
+    if (isFullscreenWindow(win)) {
+        lastFullscreenFocus = win;
+        log("Fullscreen focus remembered (" + reason + "): " + win.caption);
+    }
+
+    connectCloseSuppressor(win);
 }
 
 function staticOverrideKey(slot, suffix) {
@@ -222,62 +267,6 @@ function dimensionFromOverrideValue(value, monitorSize, currentSize) {
     return Math.max(1, Math.min(value, monitorSize));
 }
 
-function sanitizeCaptureField(value) {
-    value = stringValue(value);
-    value = value.replace(/\|/g, "/");
-    value = value.replace(/\r/g, " ");
-    value = value.replace(/\n/g, " ");
-    value = value.replace(/^\s+|\s+$/g, "");
-    return value;
-}
-
-function logWindowInfoForOverride(win) {
-    if (!win) return;
-
-    var rc = "";
-    var rn = "";
-    var title = "";
-    var pid = "";
-
-    try { rc = sanitizeCaptureField(win.resourceClass || ""); } catch (e1) {}
-    try { rn = sanitizeCaptureField(win.resourceName || ""); } catch (e2) {}
-    try { title = sanitizeCaptureField(win.caption || ""); } catch (e3) {}
-    try { pid = sanitizeCaptureField(win.pid || ""); } catch (e4) {}
-
-    var match = rc || rn || title;
-    var target = (rc || rn) ? 0 : 1;
-    var name = rc || rn || title || "Window";
-
-    /*
-     * KWin scripts can read their own config, but they do not expose a
-     * writeConfig() equivalent. This line is intentionally machine-readable
-     * so touchslide-config can import it into the first empty override row.
-     */
-    log("OVERRIDE_CAPTURE|name=" + name +
-        "|match=" + match +
-        "|target=" + target +
-        "|title=" + title +
-        "|resourceClass=" + rc +
-        "|resourceName=" + rn +
-        "|pid=" + pid);
-
-    log("Override capture ready. Run: touchslide-config import-last-capture");
-}
-
-
-function openSettingsHelperHint() {
-    log("Settings helper request: open Touch Slide Window Settings from the application launcher, or run: touchslide-settings");
-}
-
-function captureActiveWindowInfoForOverride() {
-    var win = workspace.activeWindow;
-    if (!win) {
-        log("Override capture failed: no active window.");
-        return;
-    }
-    logWindowInfoForOverride(win);
-}
-
 function settingsSignature() {
     return [
         VISIBLE_STRIP_PIXELS,
@@ -290,6 +279,18 @@ function settingsSignature() {
         ANIM_INTERVAL_MS,
         SUPPRESS_FOCUS_REVEAL_IF_LAST_NORMAL_WAS_MINIMIZED,
         DOCK_TO_VIRTUAL_SCREEN_EDGES,
+        DOCK_HINT_MODE,
+        DOCK_HINT_DELAY_MS,
+        GESTURE_DOCK_ENABLED,
+        GESTURE_DOCK_MODE,
+        GESTURE_DOCK_THRESHOLD_PX,
+        GESTURE_DOCK_TIMEOUT_MS,
+        GESTURE_DOCK_CONE_DEGREES,
+        GESTURE_INDICATOR_ENABLED,
+        GESTURE_SELECTOR_MODE,
+        GESTURE_SELECTOR_DISTANCE_PX,
+        GESTURE_SELECTOR_TILE_SIZE_PX,
+        GESTURE_SELECTOR_MARGIN_PX,
         ATTENTION_POKE_ENABLED,
         ATTENTION_POKE_MODE,
         ATTENTION_POKE_PIXELS,
@@ -311,31 +312,43 @@ function settingsSignature() {
 function loadSettings(reason) {
     var before = settingsSignature();
 
-    VISIBLE_STRIP_PIXELS = asInt(readConfig("visibleStripPixels", VISIBLE_STRIP_PIXELS), VISIBLE_STRIP_PIXELS, 1, 300);
-    REVEAL_GAP = asInt(readConfig("revealGap", REVEAL_GAP), REVEAL_GAP, 0, 300);
-    HOVER_MARGIN = asInt(readConfig("hoverMargin", HOVER_MARGIN), HOVER_MARGIN, 0, 200);
-    LEAVE_MARGIN = asInt(readConfig("leaveMargin", LEAVE_MARGIN), LEAVE_MARGIN, 0, 200);
-    MOVE_TOLERANCE = asInt(readConfig("moveTolerance", MOVE_TOLERANCE), MOVE_TOLERANCE, 1, 200);
-    ANIMATE = asBool(readConfig("animate", ANIMATE), ANIMATE);
-    ANIM_STEPS = asInt(readConfig("animationSteps", ANIM_STEPS), ANIM_STEPS, 1, 80);
-    ANIM_INTERVAL_MS = asInt(readConfig("animationIntervalMs", ANIM_INTERVAL_MS), ANIM_INTERVAL_MS, 1, 100);
-    SUPPRESS_FOCUS_REVEAL_IF_LAST_NORMAL_WAS_MINIMIZED = asBool(readConfig("suppressMinimizeFallback", SUPPRESS_FOCUS_REVEAL_IF_LAST_NORMAL_WAS_MINIMIZED), SUPPRESS_FOCUS_REVEAL_IF_LAST_NORMAL_WAS_MINIMIZED);
-    DOCK_TO_VIRTUAL_SCREEN_EDGES = asBool(readConfig("dockToVirtualScreenEdges", DOCK_TO_VIRTUAL_SCREEN_EDGES), DOCK_TO_VIRTUAL_SCREEN_EDGES);
+    VISIBLE_STRIP_PIXELS = asInt(readConfig("visibleStripPixels", 10), 10, 1, 300);
+    REVEAL_GAP = asInt(readConfig("revealGap", 8), 8, 0, 300);
+    HOVER_MARGIN = asInt(readConfig("hoverMargin", 5), 5, 0, 200);
+    LEAVE_MARGIN = asInt(readConfig("leaveMargin", 8), 8, 0, 200);
+    MOVE_TOLERANCE = asInt(readConfig("moveTolerance", 40), 40, 1, 200);
+    ANIMATE = asBool(readConfig("animate", true), true);
+    ANIM_STEPS = asInt(readConfig("animationSteps", 12), 12, 1, 80);
+    ANIM_INTERVAL_MS = asInt(readConfig("animationIntervalMs", 14), 14, 1, 100);
+    SUPPRESS_FOCUS_REVEAL_IF_LAST_NORMAL_WAS_MINIMIZED = asBool(readConfig("suppressMinimizeFallback", true), true);
+    DOCK_TO_VIRTUAL_SCREEN_EDGES = asBool(readConfig("dockToVirtualScreenEdges", true), true);
+    DOCK_HINT_MODE = asInt(readConfig("dockHintMode", 2), 2, 0, 3);
+    DOCK_HINT_DELAY_MS = asInt(readConfig("dockHintDelayMs", 500), 500, 0, 5000);
+    GESTURE_DOCK_ENABLED = asBool(readConfig("gestureDockEnabled", false), false);
+    GESTURE_DOCK_MODE = asInt(readConfig("gestureDockMode", 0), 0, 0, 1);
+    GESTURE_DOCK_THRESHOLD_PX = asInt(readConfig("gestureDockThresholdPx", 20), 20, 1, 500);
+    GESTURE_DOCK_TIMEOUT_MS = asInt(readConfig("gestureDockTimeoutMs", 2500), 2500, 250, 10000);
+    GESTURE_DOCK_CONE_DEGREES = asInt(readConfig("gestureDockConeDegrees", 35), 35, 10, 44);
+    GESTURE_INDICATOR_ENABLED = asBool(readConfig("gestureIndicatorEnabled", true), true);
+    GESTURE_SELECTOR_MODE = asInt(readConfig("gestureSelectorMode", 1), 1, 0, 1);
+    GESTURE_SELECTOR_DISTANCE_PX = asInt(readConfig("gestureSelectorDistancePx", 78), 78, 24, 300);
+    GESTURE_SELECTOR_TILE_SIZE_PX = asInt(readConfig("gestureSelectorTileSizePx", 54), 54, 18, 180);
+    GESTURE_SELECTOR_MARGIN_PX = asInt(readConfig("gestureSelectorMarginPx", 10), 10, 0, 80);
 
-    ATTENTION_POKE_ENABLED = asBool(readConfig("attentionPokeEnabled", ATTENTION_POKE_ENABLED), ATTENTION_POKE_ENABLED);
-    ATTENTION_POKE_MODE = asInt(readConfig("attentionPokeMode", ATTENTION_POKE_MODE), ATTENTION_POKE_MODE, 0, 1);
-    ATTENTION_POKE_PIXELS = asInt(readConfig("attentionPokePixels", ATTENTION_POKE_PIXELS), ATTENTION_POKE_PIXELS, 1, 500);
-    ATTENTION_POKE_HOLD_MS = asInt(readConfig("attentionPokeHoldMs", ATTENTION_POKE_HOLD_MS), ATTENTION_POKE_HOLD_MS, 0, 30000);
-    ATTENTION_REPEAT_COUNT = asInt(readConfig("attentionRepeatCount", ATTENTION_REPEAT_COUNT), ATTENTION_REPEAT_COUNT, 1, 20);
-    ATTENTION_POKE_COOLDOWN_MS = asInt(readConfig("attentionPokeCooldownMs", ATTENTION_POKE_COOLDOWN_MS), ATTENTION_POKE_COOLDOWN_MS, 0, 60000);
-    ATTENTION_ANIM_STEPS = asInt(readConfig("attentionAnimationSteps", ATTENTION_ANIM_STEPS), ATTENTION_ANIM_STEPS, 1, 80);
-    ATTENTION_ANIM_INTERVAL_MS = asInt(readConfig("attentionAnimationIntervalMs", ATTENTION_ANIM_INTERVAL_MS), ATTENTION_ANIM_INTERVAL_MS, 1, 100);
-    RESIZE_ON_DOCK_ENABLED = asBool(readConfig("resizeOnDockEnabled", RESIZE_ON_DOCK_ENABLED), RESIZE_ON_DOCK_ENABLED);
-    CENTER_ON_DOCK_ENABLED = asBool(readConfig("centerOnDockEnabled", CENTER_ON_DOCK_ENABLED), CENTER_ON_DOCK_ENABLED);
-    DEFAULT_RESIZE_WIDTH_VALUE = asInt(readConfig("defaultResizeWidthValue", DEFAULT_RESIZE_WIDTH_VALUE), DEFAULT_RESIZE_WIDTH_VALUE, 0, 9999);
-    DEFAULT_RESIZE_HEIGHT_VALUE = asInt(readConfig("defaultResizeHeightValue", DEFAULT_RESIZE_HEIGHT_VALUE), DEFAULT_RESIZE_HEIGHT_VALUE, 0, 9999);
-    ALLOW_MOVE_ALONG_DOCK_EDGE = asBool(readConfig("allowMoveAlongDockEdge", ALLOW_MOVE_ALONG_DOCK_EDGE), ALLOW_MOVE_ALONG_DOCK_EDGE);
-    HIDE_ON_DOCK_EDGE_HIT = asBool(readConfig("hideOnDockEdgeHit", HIDE_ON_DOCK_EDGE_HIT), HIDE_ON_DOCK_EDGE_HIT);
+    ATTENTION_POKE_ENABLED = asBool(readConfig("attentionPokeEnabled", true), true);
+    ATTENTION_POKE_MODE = asInt(readConfig("attentionPokeMode", 0), 0, 0, 1);
+    ATTENTION_POKE_PIXELS = asInt(readConfig("attentionPokePixels", 20), 20, 1, 500);
+    ATTENTION_POKE_HOLD_MS = asInt(readConfig("attentionPokeHoldMs", 1200), 1200, 0, 30000);
+    ATTENTION_REPEAT_COUNT = asInt(readConfig("attentionRepeatCount", 2), 2, 1, 20);
+    ATTENTION_POKE_COOLDOWN_MS = asInt(readConfig("attentionPokeCooldownMs", 2000), 2000, 0, 60000);
+    ATTENTION_ANIM_STEPS = asInt(readConfig("attentionAnimationSteps", 6), 6, 1, 80);
+    ATTENTION_ANIM_INTERVAL_MS = asInt(readConfig("attentionAnimationIntervalMs", 14), 14, 1, 100);
+    RESIZE_ON_DOCK_ENABLED = asBool(readConfig("resizeOnDockEnabled", false), false);
+    CENTER_ON_DOCK_ENABLED = asBool(readConfig("centerOnDockEnabled", false), false);
+    DEFAULT_RESIZE_WIDTH_VALUE = asInt(readConfig("defaultResizeWidthValue", 0), 0, 0, 9999);
+    DEFAULT_RESIZE_HEIGHT_VALUE = asInt(readConfig("defaultResizeHeightValue", 90), 90, 0, 9999);
+    ALLOW_MOVE_ALONG_DOCK_EDGE = asBool(readConfig("allowMoveAlongDockEdge", true), true);
+    HIDE_ON_DOCK_EDGE_HIT = asBool(readConfig("hideOnDockEdgeHit", false), false);
     APP_OVERRIDES = loadAppOverrides();
     var previewCounter = asInt(readConfig("attentionPreviewCounter", 0), 0, 0, 2147483647);
     if (lastAttentionPreviewCounter < 0) {
@@ -370,6 +383,18 @@ function loadSettings(reason) {
             " defaultResizeH=" + DEFAULT_RESIZE_HEIGHT_VALUE +
             " allowAlongEdge=" + ALLOW_MOVE_ALONG_DOCK_EDGE +
             " hideOnDockEdgeHit=" + HIDE_ON_DOCK_EDGE_HIT +
+            " dockHintMode=" + DOCK_HINT_MODE +
+            " dockHintDelayMs=" + DOCK_HINT_DELAY_MS +
+            " gestureEnabled=" + GESTURE_DOCK_ENABLED +
+            " gestureMode=" + GESTURE_DOCK_MODE +
+            " gestureThreshold=" + GESTURE_DOCK_THRESHOLD_PX +
+            " gestureTimeoutMs=" + GESTURE_DOCK_TIMEOUT_MS +
+            " gestureCone=" + GESTURE_DOCK_CONE_DEGREES +
+            " gestureIndicator=" + GESTURE_INDICATOR_ENABLED +
+            " gestureSelectorMode=" + GESTURE_SELECTOR_MODE +
+            " gestureSelectorDistance=" + GESTURE_SELECTOR_DISTANCE_PX +
+            " gestureSelectorTileSize=" + GESTURE_SELECTOR_TILE_SIZE_PX +
+            " gestureSelectorMargin=" + GESTURE_SELECTOR_MARGIN_PX +
             " overrides=" + APP_OVERRIDES.length);
         recomputeAllDockedGeometry(reason);
     }
@@ -655,6 +680,22 @@ function isUsableWindow(win) {
     return true;
 }
 
+/*
+ * Focus targets are allowed to be KWin-fullscreen. Docking still uses
+ * isUsableWindow(), because docking a fullscreen client itself is not a
+ * sane/default operation. This separate predicate lets us restore focus to
+ * games whose borderless mode toggles KWin's fullScreen state.
+ */
+function isFocusableWindow(win) {
+    if (!win) return false;
+    if (!win.managed) return false;
+    if (win.deleted) return false;
+    if (win.specialWindow) return false;
+    if (win.popupWindow) return false;
+    if (win.desktopWindow || win.dock || win.splash || win.tooltip || win.notification) return false;
+    return true;
+}
+
 function findEntry(win) {
     if (!win) return null;
     var id = winId(win);
@@ -796,7 +837,7 @@ function windowUnderCursor(excludeWin) {
         var p = workspace.cursorPos;
         var w = workspace.windowAt(p);
 
-        if (w && w !== excludeWin && isUsableWindow(w) && !w.minimized && !isDockedWindow(w)) {
+        if (w && w !== excludeWin && isFocusableWindow(w) && !w.minimized && !isDockedWindow(w)) {
             return w;
         }
     } catch (e) {
@@ -813,7 +854,7 @@ function topmostNonDockedWindow(excludeWin) {
         for (var i = list.length - 1; i >= 0; i--) {
             var w = list[i];
 
-            if (w && w !== excludeWin && isUsableWindow(w) && !w.minimized && !isDockedWindow(w)) {
+            if (w && w !== excludeWin && isFocusableWindow(w) && !w.minimized && !isDockedWindow(w)) {
                 return w;
             }
         }
@@ -824,21 +865,57 @@ function topmostNonDockedWindow(excludeWin) {
     return null;
 }
 
-function chooseFocusTarget(entry) {
-    var target = windowUnderCursor(entry.win);
-    if (target) {
-        log("Focus target under cursor: " + target.caption);
-        return target;
+function topmostFullscreenNonDockedWindow(excludeWin) {
+    try {
+        var list = workspace.stackingOrder;
+
+        for (var i = list.length - 1; i >= 0; i--) {
+            var w = list[i];
+
+            if (w && w !== excludeWin && isFocusableWindow(w) && !w.minimized && !isDockedWindow(w) && isFullscreenWindow(w)) {
+                return w;
+            }
+        }
+    } catch (e) {
+        log("topmostFullscreenNonDockedWindow failed: " + e);
     }
 
-    if (entry.previousFocus && isUsableWindow(entry.previousFocus) && !entry.previousFocus.minimized && entry.previousFocus !== entry.win) {
+    return null;
+}
+
+
+function chooseFocusTarget(entry) {
+    /*
+     * Prefer the window that had focus before reveal. This is important with
+     * KWin fullscreen game windows: windowAt(cursor) can point at a different
+     * normal window once the docked window hides, which caused random apps to
+     * receive focus and leave panels/taskbars visible.
+     */
+    if (entry.previousFocus && isFocusableWindow(entry.previousFocus) && !entry.previousFocus.minimized && entry.previousFocus !== entry.win && !isDockedWindow(entry.previousFocus)) {
         log("Focus target previousFocus: " + entry.previousFocus.caption);
         return entry.previousFocus;
     }
 
-    if (lastNonDockedFocus && isUsableWindow(lastNonDockedFocus) && !lastNonDockedFocus.minimized && lastNonDockedFocus !== entry.win) {
+    if (lastFullscreenFocus && isFocusableWindow(lastFullscreenFocus) && !lastFullscreenFocus.minimized && lastFullscreenFocus !== entry.win && !isDockedWindow(lastFullscreenFocus)) {
+        log("Focus target lastFullscreenFocus: " + lastFullscreenFocus.caption);
+        return lastFullscreenFocus;
+    }
+
+    if (lastNonDockedFocus && isFocusableWindow(lastNonDockedFocus) && !lastNonDockedFocus.minimized && lastNonDockedFocus !== entry.win && !isDockedWindow(lastNonDockedFocus)) {
         log("Focus target lastNonDockedFocus: " + lastNonDockedFocus.caption);
         return lastNonDockedFocus;
+    }
+
+    var target = topmostFullscreenNonDockedWindow(entry.win);
+    if (target) {
+        log("Focus target topmost fullscreen non-docked: " + target.caption);
+        return target;
+    }
+
+    target = windowUnderCursor(entry.win);
+    if (target) {
+        log("Focus target under cursor: " + target.caption);
+        return target;
     }
 
     target = topmostNonDockedWindow(entry.win);
@@ -898,13 +975,18 @@ function delayedLoadSettings(reason) {
 }
 
 function focusWindow(win, reason) {
-    if (!win || !isUsableWindow(win)) return false;
+    if (!win || !isFocusableWindow(win)) return false;
 
     try {
         suppressActivationHandling = true;
+        try { workspace.raiseWindow(win); } catch (e1) {}
         workspace.activeWindow = win;
         suppressActivationHandling = false;
-        lastNonDockedFocus = isDockedWindow(win) ? lastNonDockedFocus : win;
+
+        if (!isDockedWindow(win)) {
+            rememberNonDockedFocus(win, "focusWindow " + reason);
+        }
+
         log("Focused " + win.caption + " (" + reason + ")");
         return true;
     } catch (e) {
@@ -975,20 +1057,20 @@ function shouldSuppressFocusReveal(entry) {
 
 function rememberPreviousFocus(entry, preferred) {
     try {
-        if (preferred && preferred !== entry.win && isUsableWindow(preferred)) {
+        if (preferred && preferred !== entry.win && isFocusableWindow(preferred) && !isDockedWindow(preferred)) {
             entry.previousFocus = preferred;
             log("Remembered previous focus from preferred: " + preferred.caption);
             return;
         }
 
         var active = workspace.activeWindow;
-        if (active && active !== entry.win && isUsableWindow(active)) {
+        if (active && active !== entry.win && isFocusableWindow(active) && !isDockedWindow(active)) {
             entry.previousFocus = active;
             log("Remembered previous focus from active: " + active.caption);
             return;
         }
 
-        if (lastNonDockedFocus && lastNonDockedFocus !== entry.win && isUsableWindow(lastNonDockedFocus)) {
+        if (lastNonDockedFocus && lastNonDockedFocus !== entry.win && isFocusableWindow(lastNonDockedFocus) && !isDockedWindow(lastNonDockedFocus)) {
             entry.previousFocus = lastNonDockedFocus;
             log("Remembered previous focus from last non-docked: " + lastNonDockedFocus.caption);
             return;
@@ -1039,6 +1121,8 @@ function undockWindow(entry, restorePosition) {
 }
 
 function undockAllWindows(restorePosition, reason) {
+    clearGestureIndicator("restore/undock all");
+    cancelPendingFocusReveal("restore/undock all");
     log("Restore/undock all requested (" + reason + "), count=" + stowed.length);
 
     for (var i = stowed.length - 1; i >= 0; i--) {
@@ -1048,6 +1132,88 @@ function undockAllWindows(restorePosition, reason) {
             log("Failed to undock entry during restore-all: " + e);
         }
     }
+}
+
+
+
+function scheduleDockAttentionHint(entry, delayMs) {
+    var timer = makeTimer(Math.max(0, delayMs), function() {
+        try { timer.stop(); } catch (e0) {}
+        if (!entry || !entry.win || entry.win.deleted || !isUsableWindow(entry.win)) return;
+        if (entry.state !== "hidden") return;
+        attentionPoke(entry, true);
+    });
+
+    if (timer) {
+        timer.start();
+    }
+}
+
+function finishDockSetup(entry, win) {
+    try { win.closed.connect(function() { removeEntryForWindow(win); }); } catch (e2) {}
+    connectAttentionSignal(win);
+    try { win.frameGeometryChanged.connect(function() { onWindowGeometryChanged(win); }); } catch (e3) {}
+
+    log("Docked OK: " + win.caption + " to " + entry.edge);
+}
+
+function applyDockHint(entry) {
+    var win = entry.win;
+
+    if (DOCK_HINT_MODE === 1) {
+        entry.state = "docking";
+        animateMove(entry, entry.hidden, "dock animate-to-hidden", "hidden", function() {
+            entry.hoverArmed = false;
+            entry.cursorLeaveArmed = false;
+            entry.edgeHideArmed = false;
+            finishDockSetup(entry, win);
+        });
+        return;
+    }
+
+    if (DOCK_HINT_MODE === 2) {
+        /*
+         * Start fully visible at the dock edge, wait briefly, then use the
+         * normal hide animation. This gives users a clear visual clue about
+         * where the window went without requiring a separate overlay.
+         */
+        setWindowGeometry(win, entry.revealed, "dock hint revealed");
+        entry.state = "shown";
+        entry.hoverArmed = false;
+        entry.cursorLeaveArmed = false;
+        entry.edgeHideArmed = false;
+
+        var timer = makeTimer(Math.max(0, DOCK_HINT_DELAY_MS), function() {
+            try { timer.stop(); } catch (e0) {}
+            if (!entry || !entry.win || entry.win.deleted || !isUsableWindow(entry.win)) return;
+            if (entry.state !== "shown") return;
+            entry.state = "hiding";
+            animateMove(entry, entry.hidden, "dock hint stow", "hidden", function() {
+                entry.hoverArmed = false;
+                entry.cursorLeaveArmed = false;
+                entry.edgeHideArmed = false;
+                finishDockSetup(entry, win);
+            });
+        });
+
+        if (timer) {
+            timer.start();
+        } else {
+            setWindowGeometry(win, entry.hidden, "dock hint fallback hidden");
+            entry.state = "hidden";
+            finishDockSetup(entry, win);
+        }
+        return;
+    }
+
+    setWindowGeometry(win, entry.hidden, "dock hide");
+    entry.state = "hidden";
+
+    if (DOCK_HINT_MODE === 3) {
+        scheduleDockAttentionHint(entry, DOCK_HINT_DELAY_MS);
+    }
+
+    finishDockSetup(entry, win);
 }
 
 
@@ -1103,13 +1269,7 @@ function dockWindow(win, edge) {
             " hidden " + rectString(hidden) +
             " strip " + rectString(stripGeometry(entry)));
 
-        setWindowGeometry(win, hidden, "dock hide");
-
-        try { win.closed.connect(function() { removeEntryForWindow(win); }); } catch (e2) {}
-        connectAttentionSignal(win);
-        try { win.frameGeometryChanged.connect(function() { onWindowGeometryChanged(win); }); } catch (e3) {}
-
-        log("Docked OK: " + win.caption + " to " + edge);
+        applyDockHint(entry);
     } catch (e) {
         log("Failed to dock window: " + e);
         removeEntry(entry);
@@ -1182,7 +1342,7 @@ function hideWindow(entry, restoreFocus, reason) {
         if (restoreFocus) {
             target = chooseFocusTarget(entry);
             if (target) {
-                focusWindow(target, "cursor-left restore");
+                focusWindow(target, "cursor-left restore-before-hide");
             }
         }
 
@@ -1194,6 +1354,16 @@ function hideWindow(entry, restoreFocus, reason) {
             entry.hoverArmed = false;
             entry.cursorLeaveArmed = false;
             entry.edgeHideArmed = false;
+
+            /*
+             * Some fullscreen/borderless game scenarios change focus again
+             * during/after the move animation. Restore once more after the
+             * docked window is hidden.
+             */
+            if (restoreFocus && target && isFocusableWindow(target) && !target.minimized && !target.deleted) {
+                focusWindow(target, "cursor-left restore-after-hide");
+            }
+
             log("Hidden again: " + win.caption);
         });
     } catch (e) {
@@ -1248,52 +1418,101 @@ function attentionPokeAll(reason) {
 }
 
 function shellQuote(s) {
-    return "'" + String(s).replace(/'/g, "'\''") + "'";
+    return "'" + String(s).replace(/'/g, "'\"'\"'") + "'";
 }
 
 function openSettingsGui() {
     /*
-     * Use KDE KLauncher over DBus. qdbus examples for KLauncher use an empty
-     * interface with exec_blind, e.g.:
-     *   qdbus org.kde.klauncher6 /KLauncher exec_blind /path/to/app ""
+     * Use KDE KLauncher over DBus. KWin cannot spawn shell commands directly,
+     * but KLauncher can start the same KCM used by the KWin Scripts manager.
      *
-     * KWin cannot spawn shell commands directly, so this is the best available
-     * normal KWin-script route.
+     * The generic scripted KCM expects two arguments: plugin id and package
+     * type. If Plasma rejects that direct config dialog, fall back to the KWin
+     * Scripts manager page, then to the standalone helper as a last resort.
+     *
+     * qdbus examples for KLauncher use an empty interface with exec_blind:
+     *   qdbus org.kde.klauncher6 /KLauncher exec_blind /path/to/app ""
      */
-    var cmd = readConfig("settingsCommand", "/home/jk/Code/touch-slide-window/touchslide-settings");
+    var helper = readConfig("settingsCommand", "/home/jk/.local/bin/touchslide-settings");
+    var scriptsPageCmd = "systemsettings kcm_kwin_scripts";
+    var nativeCmd =
+        "kcmshell6 kcm_kwin4_genericscripted --args " +
+        shellQuote("touch-slide-window KWin/Script") +
+        " --caption " + shellQuote("Touch Slide Window Settings") +
+        " || systemsettings kcm_kwin_scripts" +
+        " || " + shellQuote(helper);
     var wrapper = "/bin/sh";
-    var wrapperArg = "-lc " + shellQuote(cmd);
+    var wrapperArgs = ["-lc", nativeCmd];
+    var wrapperArg = "-lc " + shellQuote(nativeCmd);
 
-    log("Trying to open settings helper: " + cmd);
+    log("Trying to open KDE KWin Scripts settings page.");
 
     try {
-        callDBus("org.kde.klauncher6", "/KLauncher", "", "exec_blind", cmd, "", function() {
-            log("Requested settings helper through org.kde.klauncher6 exec_blind.");
+        callDBus("org.kde.klauncher6", "/KLauncher", "org.kde.KLauncher", "exec_blind", "systemsettings", ["kcm_kwin_scripts"], function() {
+            log("Requested KWin Scripts page through org.kde.klauncher6 argument list.");
+        });
+        return;
+    } catch (p1) {
+        log("klauncher6 KWin Scripts page launch failed: " + p1);
+    }
+
+    try {
+        callDBus("org.kde.klauncher6", "/KLauncher", "", "exec_blind", "systemsettings", ["kcm_kwin_scripts"], function() {
+            log("Requested KWin Scripts page through org.kde.klauncher6 empty-interface argument list.");
+        });
+        return;
+    } catch (p2) {
+        log("klauncher6 empty-interface KWin Scripts page launch failed: " + p2);
+    }
+
+    try {
+        callDBus("org.kde.klauncher6", "/KLauncher", "", "exec_blind", wrapper, "-lc " + shellQuote(scriptsPageCmd), function() {
+            log("Requested KWin Scripts page through shell fallback.");
+        });
+        return;
+    } catch (p3) {
+        log("klauncher6 shell KWin Scripts page launch failed: " + p3);
+    }
+
+    log("Trying to open native settings GUI: " + nativeCmd);
+
+    try {
+        callDBus("org.kde.klauncher6", "/KLauncher", "org.kde.KLauncher", "exec_blind", wrapper, wrapperArgs, function() {
+            log("Requested native settings GUI through org.kde.klauncher6 argument list.");
         });
         return;
     } catch (e1) {
-        log("klauncher6 direct exec_blind failed: " + e1);
+        log("klauncher6 argument-list settings launch failed: " + e1);
+    }
+
+    try {
+        callDBus("org.kde.klauncher6", "/KLauncher", "", "exec_blind", wrapper, wrapperArgs, function() {
+            log("Requested native settings GUI through org.kde.klauncher6 empty-interface argument list.");
+        });
+        return;
+    } catch (e2) {
+        log("klauncher6 empty-interface argument-list settings launch failed: " + e2);
     }
 
     try {
         callDBus("org.kde.klauncher6", "/KLauncher", "", "exec_blind", wrapper, wrapperArg, function() {
-            log("Requested settings helper through org.kde.klauncher6 shell wrapper.");
-        });
-        return;
-    } catch (e2) {
-        log("klauncher6 shell wrapper failed: " + e2);
-    }
-
-    try {
-        callDBus("org.kde.klauncher5", "/KLauncher", "", "exec_blind", cmd, "", function() {
-            log("Requested settings helper through org.kde.klauncher5 exec_blind.");
+            log("Requested native settings GUI through org.kde.klauncher6 string fallback.");
         });
         return;
     } catch (e3) {
-        log("klauncher5 direct exec_blind failed: " + e3);
+        log("klauncher6 string fallback settings launch failed: " + e3);
     }
 
-    log("Could not open settings GUI from KWin script. Run manually: " + cmd);
+    try {
+        callDBus("org.kde.klauncher5", "/KLauncher", "", "exec_blind", wrapper, wrapperArg, function() {
+            log("Requested native settings GUI through org.kde.klauncher5.");
+        });
+        return;
+    } catch (e4) {
+        log("klauncher5 settings launch failed: " + e4);
+    }
+
+    log("Could not open settings GUI from KWin script. Run manually: " + nativeCmd);
 }
 
 function runAttentionRepeat(entry, originalHidden, poke, index, total) {
@@ -1549,9 +1768,71 @@ function checkCursor() {
     }
 }
 
+
+function cancelPendingFocusReveal(reason) {
+    if (focusRevealTimer) {
+        try { focusRevealTimer.stop(); } catch (e) {}
+    }
+
+    focusRevealTimer = null;
+    pendingFocusRevealEntry = null;
+    pendingFocusRevealPrevious = null;
+
+    if (reason) {
+        log("Cancelled pending focus reveal: " + reason);
+    }
+}
+
+function scheduleFocusReveal(entry, preferredPreviousFocus, reason) {
+    cancelPendingFocusReveal("new focus reveal scheduled");
+
+    if (!entry || !entry.win || entry.win.deleted) return;
+
+    pendingFocusRevealEntry = entry;
+    pendingFocusRevealPrevious = preferredPreviousFocus;
+
+    log("Scheduled focus reveal in " + FOCUS_REVEAL_DELAY_MS + "ms: " + entry.win.caption + " (" + reason + ")");
+
+    focusRevealTimer = makeTimer(FOCUS_REVEAL_DELAY_MS, function() {
+        var e = pendingFocusRevealEntry;
+        var prev = pendingFocusRevealPrevious;
+
+        cancelPendingFocusReveal("focus reveal timer fired");
+
+        if (!e || !e.win || e.win.deleted || !isUsableWindow(e.win)) {
+            log("Delayed focus reveal ignored: docked window unavailable.");
+            return;
+        }
+
+        if (workspace.activeWindow !== e.win) {
+            log("Delayed focus reveal ignored: docked window no longer active.");
+            return;
+        }
+
+        if (nowMs() < suppressFocusRevealUntil) {
+            log("Delayed focus reveal suppressed because " + suppressFocusRevealReason);
+
+            var fallback = chooseFocusTarget(e);
+            if (fallback && fallback !== e.win) {
+                focusWindow(fallback, "delayed focus-reveal suppression fallback");
+            }
+            return;
+        }
+
+        revealWindow(e, prev, "focus-delayed");
+    });
+
+    if (focusRevealTimer) {
+        focusRevealTimer.start();
+    } else {
+        log("Could not create focus reveal timer; falling back to immediate reveal.");
+        revealWindow(entry, preferredPreviousFocus, "focus-immediate-fallback");
+    }
+}
+
 function onWindowActivated(win) {
     if (suppressActivationHandling) return;
-    if (!win || !isUsableWindow(win)) return;
+    if (!win || !isFocusableWindow(win)) return;
 
     var activatedEntry = findEntry(win);
 
@@ -1572,16 +1853,17 @@ function onWindowActivated(win) {
             return;
         }
 
-        revealWindow(activatedEntry, lastNonDockedFocus, "focus");
+        scheduleFocusReveal(activatedEntry, lastNonDockedFocus, "focus");
         return;
     }
 
     /*
-     * A non-docked window has focus now. Remember it, and hide any docked
-     * window that was revealed or revealing.
+     * A non-docked window has focus now. Remember it, cancel any pending
+     * focus-triggered dock reveal, and hide any docked window that was revealed
+     * or revealing.
      */
-    lastNonDockedFocus = win;
-    connectCloseSuppressor(win);
+    cancelPendingFocusReveal("non-docked window activated");
+    rememberNonDockedFocus(win, "windowActivated");
     log("Non-docked focus: " + win.caption);
 
     for (var i = 0; i < stowed.length; i++) {
@@ -1593,6 +1875,397 @@ function onWindowActivated(win) {
         }
     }
 }
+
+
+
+function showKWinOutline(rect, reason) {
+    if (!gestureIndicatorAvailable) {
+        return false;
+    }
+
+    try {
+        workspace.showOutline(rect);
+        return true;
+    } catch (e1) {
+        try {
+            workspace.showOutline(rect.x, rect.y, rect.width, rect.height);
+            return true;
+        } catch (e2) {
+            log("Gesture indicator showOutline failed (" + reason + "): " + e2);
+            gestureIndicatorAvailable = false;
+        }
+    }
+
+    return false;
+}
+
+function hideKWinOutline(reason) {
+    if (!gestureIndicatorAvailable) {
+        return false;
+    }
+
+    try {
+        workspace.hideOutline();
+        return true;
+    } catch (e1) {
+        try {
+            workspace.hideOutline();
+            return true;
+        } catch (e2) {
+            /*
+             * Older/newer KWin builds may not expose outline helpers to normal
+             * scripts. This is non-fatal; gesture docking still works.
+             */
+        }
+    }
+
+    if (reason) {
+        log("Gesture indicator hide skipped/unavailable (" + reason + ")");
+    }
+
+    return false;
+}
+
+function gestureEdgeStripGeometry(win, edge) {
+    var area = dockAreaFor(win, edge);
+    var original = copyRect(win.frameGeometry);
+    var dockBase = fittedDockBaseGeometry(win, edge, area, original);
+    var revealed = revealedGeometry(area, dockBase, edge);
+    var thickness = Math.max(VISIBLE_STRIP_PIXELS, Math.min(48, Math.round(Math.min(area.width, area.height) * 0.03)));
+
+    if (edge === "left") {
+        return { x: area.x, y: revealed.y, width: thickness, height: revealed.height };
+    }
+
+    if (edge === "right") {
+        return { x: area.x + area.width - thickness, y: revealed.y, width: thickness, height: revealed.height };
+    }
+
+    if (edge === "top") {
+        return { x: revealed.x, y: area.y, width: revealed.width, height: thickness };
+    }
+
+    if (edge === "bottom") {
+        return { x: revealed.x, y: area.y + area.height - thickness, width: revealed.width, height: thickness };
+    }
+
+    return revealed;
+}
+
+function gesturePopupTiles(anchor) {
+    var tile = Math.max(18, GESTURE_SELECTOR_TILE_SIZE_PX);
+    var dist = Math.max(tile + 6, GESTURE_SELECTOR_DISTANCE_PX);
+    var half = Math.round(tile / 2);
+    var cx = Math.round(anchor.x);
+    var cy = Math.round(anchor.y);
+
+    return {
+        left: { x: cx - dist - half, y: cy - half, width: tile, height: tile },
+        right: { x: cx + dist - half, y: cy - half, width: tile, height: tile },
+        top: { x: cx - half, y: cy - dist - half, width: tile, height: tile },
+        bottom: { x: cx - half, y: cy + dist - half, width: tile, height: tile }
+    };
+}
+
+function gesturePopupEdgeFromCursor(p, anchor) {
+    var tiles = gesturePopupTiles(anchor);
+    var margin = GESTURE_SELECTOR_MARGIN_PX;
+
+    if (pointInRect(p, tiles.left, margin)) return "left";
+    if (pointInRect(p, tiles.right, margin)) return "right";
+    if (pointInRect(p, tiles.top, margin)) return "top";
+    if (pointInRect(p, tiles.bottom, margin)) return "bottom";
+
+    return "";
+}
+
+function gestureIndicatorGeometry(win, edge) {
+    if (GESTURE_SELECTOR_MODE === 1 && gestureActive && gestureActive.startCursor) {
+        var tiles = gesturePopupTiles(gestureActive.startCursor);
+        if (tiles[edge]) {
+            return tiles[edge];
+        }
+    }
+
+    return gestureEdgeStripGeometry(win, edge);
+}
+
+function showGestureIndicator(win, edge, logUpdate) {
+    if (!GESTURE_INDICATOR_ENABLED || !win || !edge) {
+        return;
+    }
+
+    try {
+        var r = gestureIndicatorGeometry(win, edge);
+        if (showKWinOutline(r, "gesture " + edge)) {
+            if (logUpdate) {
+                log("Gesture indicator: " + edge + " " + rectString(r));
+            }
+        }
+    } catch (e) {
+        log("Gesture indicator failed: " + e);
+    }
+}
+
+function stopGestureIndicatorRefresh() {
+    if (!gestureIndicatorRefreshTimer) {
+        return;
+    }
+
+    try { gestureIndicatorRefreshTimer.stop(); } catch (e) {}
+    gestureIndicatorRefreshTimer = null;
+}
+
+function startGestureIndicatorRefresh() {
+    if (!GESTURE_INDICATOR_ENABLED || gestureIndicatorRefreshTimer) {
+        return;
+    }
+
+    gestureIndicatorRefreshTimer = makeTimer(GESTURE_INDICATOR_REFRESH_MS, function() {
+        if (!gestureActive || !gestureActive.win || !gestureActive.edge) {
+            stopGestureIndicatorRefresh();
+            return;
+        }
+
+        if (gestureActive.win.deleted || !isUsableWindow(gestureActive.win) || isDockedWindow(gestureActive.win)) {
+            cancelGestureDock("indicator refresh target unavailable");
+            return;
+        }
+
+        if (nowMs() - gestureActive.startedAt > GESTURE_DOCK_TIMEOUT_MS) {
+            cancelGestureDock("timeout during indicator refresh");
+            return;
+        }
+
+        showGestureIndicator(gestureActive.win, gestureActive.edge, false);
+    });
+
+    if (gestureIndicatorRefreshTimer) {
+        gestureIndicatorRefreshTimer.start();
+    }
+}
+
+function clearGestureIndicator(reason) {
+    stopGestureIndicatorRefresh();
+
+    if (!GESTURE_INDICATOR_ENABLED) {
+        return;
+    }
+
+    hideKWinOutline(reason);
+}
+
+
+function gestureDirectionFromDelta(dx, dy) {
+    var dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist < GESTURE_DOCK_THRESHOLD_PX) {
+        return "";
+    }
+
+    /*
+     * Cone directions:
+     *   right = near 0 degrees
+     *   down  = near 90 degrees
+     *   left  = near 180 degrees
+     *   up    = near 270 degrees
+     *
+     * The remaining diagonal regions are deliberate blind spots so slightly
+     * diagonal mouse movement does not accidentally choose a dock edge.
+     */
+    var angle = Math.atan2(dy, dx) * 180 / Math.PI;
+    if (angle < 0) angle += 360;
+
+    var cone = Math.max(10, Math.min(44, GESTURE_DOCK_CONE_DEGREES));
+
+    if (angle <= cone || angle >= 360 - cone) return "right";
+    if (Math.abs(angle - 90) <= cone) return "bottom";
+    if (Math.abs(angle - 180) <= cone) return "left";
+    if (Math.abs(angle - 270) <= cone) return "top";
+
+    return "";
+}
+
+function armGestureDock(reason) {
+    loadSettings("armGestureDock");
+
+    if (!GESTURE_DOCK_ENABLED) {
+        /*
+         * The shortcut should still be useful even if the user forgot to turn
+         * the checkbox on. Temporarily arm it anyway, but log the mismatch.
+         */
+        log("Gesture dock shortcut used while gesture dock setting is disabled; temporarily armed anyway.");
+    }
+
+    gestureArmedUntil = nowMs() + GESTURE_DOCK_TIMEOUT_MS;
+    log("Gesture dock armed for " + GESTURE_DOCK_TIMEOUT_MS + "ms (" + reason + ")");
+}
+
+function gestureDockAllowed() {
+    if (!GESTURE_DOCK_ENABLED && nowMs() > gestureArmedUntil) {
+        return false;
+    }
+
+    if (GESTURE_DOCK_MODE === 1) {
+        return true;
+    }
+
+    return nowMs() <= gestureArmedUntil;
+}
+
+function cancelGestureDock(reason) {
+    if (gestureActive) {
+        log("Gesture dock cancelled: " + reason);
+    }
+
+    clearGestureIndicator("gesture cancel: " + reason);
+    gestureActive = null;
+}
+
+function beginGestureDock(win) {
+    loadSettings("beginGestureDock");
+
+    if (!gestureDockAllowed()) {
+        return;
+    }
+
+    if (!win || !isUsableWindow(win) || isDockedWindow(win)) {
+        return;
+    }
+
+    var p = workspace.cursorPos;
+
+    gestureActive = {
+        win: win,
+        startCursor: { x: p.x, y: p.y },
+        startGeometry: copyRect(win.frameGeometry),
+        edge: "",
+        indicatorShown: false,
+        startedAt: nowMs()
+    };
+
+    log("Gesture dock started for " + win.caption +
+        " at cursor x=" + p.x + " y=" + p.y +
+        " mode=" + GESTURE_DOCK_MODE);
+}
+
+function updateGestureDock(win) {
+    if (!gestureActive || gestureActive.win !== win) {
+        return;
+    }
+
+    if (!win || win.deleted || !isUsableWindow(win) || isDockedWindow(win)) {
+        cancelGestureDock("window unusable/docked");
+        return;
+    }
+
+    if (nowMs() - gestureActive.startedAt > GESTURE_DOCK_TIMEOUT_MS) {
+        cancelGestureDock("timeout");
+        return;
+    }
+
+    var p = workspace.cursorPos;
+    var dx = p.x - gestureActive.startCursor.x;
+    var dy = p.y - gestureActive.startCursor.y;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    var edge = "";
+    if (GESTURE_SELECTOR_MODE === 1) {
+        edge = gesturePopupEdgeFromCursor(p, gestureActive.startCursor);
+    } else {
+        edge = gestureDirectionFromDelta(dx, dy);
+    }
+
+    if (edge) {
+        if (edge !== gestureActive.edge) {
+            gestureActive.edge = edge;
+            gestureActive.indicatorShown = true;
+            showGestureIndicator(win, edge, true);
+            startGestureIndicatorRefresh();
+            log("Gesture dock direction selected: " + edge +
+                " dx=" + dx + " dy=" + dy +
+                " window=" + win.caption);
+            return;
+        }
+
+        /*
+         * KWin's outline can disappear quickly on some builds unless it is
+         * refreshed while the interactive move continues.
+         */
+        showGestureIndicator(win, edge, false);
+        return;
+    }
+
+    /*
+     * Once a direction is selected, keep it through diagonal jitter. Otherwise
+     * a normal hand-drag can enter a blind spot for one step, hide the outline,
+     * and finish without docking. Moving back near the start point still cancels
+     * the pending direction.
+     */
+    if (!edge && gestureActive.edge) {
+        if (dist < Math.max(1, GESTURE_DOCK_THRESHOLD_PX / 2)) {
+            log("Gesture dock direction cleared near start point.");
+            gestureActive.edge = "";
+            gestureActive.indicatorShown = false;
+            clearGestureIndicator("gesture returned near start");
+            return;
+        }
+
+        showGestureIndicator(win, gestureActive.edge, false);
+    }
+}
+
+function finishGestureDock(win) {
+    if (!gestureActive || gestureActive.win !== win) {
+        return;
+    }
+
+    updateGestureDock(win);
+
+    var edge = gestureActive.edge;
+    var target = gestureActive.win;
+
+    clearGestureIndicator("gesture finish");
+    gestureActive = null;
+
+    if (!edge) {
+        log("Gesture dock finished without direction threshold.");
+        return;
+    }
+
+    /*
+     * Dock after KWin's interactive move operation finishes. Docking during
+     * the move can be overwritten by KWin's final drag geometry.
+     */
+    log("Gesture dock applying: " + target.caption + " -> " + edge);
+    dockWindow(target, edge);
+}
+
+function connectGestureSignals(win) {
+    if (!win) return;
+
+    var id = winId(win);
+    if (gestureConnected[id]) {
+        return;
+    }
+
+    gestureConnected[id] = true;
+
+    try {
+        win.interactiveMoveResizeStarted.connect(function() {
+            beginGestureDock(win);
+        });
+        win.interactiveMoveResizeStepped.connect(function(geometry) {
+            updateGestureDock(win);
+        });
+        win.interactiveMoveResizeFinished.connect(function() {
+            finishGestureDock(win);
+        });
+        log("Connected gesture signals: " + win.caption);
+    } catch (e) {
+        log("Failed to connect gesture signals for " + (win.caption || id) + ": " + e);
+    }
+}
+
 
 function dockActive(edge) {
     var win = workspace.activeWindow;
@@ -1614,9 +2287,9 @@ registerShortcut("Touch Slide Window: Dock Bottom", "Touch Slide Window: Dock Bo
 registerShortcut("Touch Slide Window: Restore All", "Touch Slide Window: Restore All", "Meta+Ctrl+Alt+U", function() { undockAllWindows(true, "shortcut"); });
 registerShortcut("Touch Slide Window: Reload Settings", "Touch Slide Window: Reload Settings", "Meta+Ctrl+Alt+R", function() { reloadSettingsViaKWinReconfigure("shortcut reload"); });
 registerShortcut("Touch Slide Window: Test Attention Poke", "Touch Slide Window: Test Attention Poke", "Meta+Ctrl+Alt+P", function() { attentionPokeAll("shortcut"); });
+registerShortcut("Touch Slide Window: Arm Gesture Dock", "Touch Slide Window: Arm Gesture Dock", "Meta+G", function() { armGestureDock("shortcut"); });
 
-registerShortcut("Touch Slide Window: Capture Override Info", "Touch Slide Window: Capture Override Info", "", function() { captureActiveWindowInfoForOverride(); });
-registerShortcut("Touch Slide Window: Open Settings Helper", "Touch Slide Window: Open Settings Helper", "", function() { openSettingsHelperHint(); });
+registerShortcut("Touch Slide Window: Open Settings", "Touch Slide Window: Open Settings", "", function() { openSettingsGui(); });
 
 registerUserActionsMenu(function(win) {
     if (!isUsableWindow(win)) return null;
@@ -1627,10 +2300,16 @@ registerUserActionsMenu(function(win) {
     if (existing) {
         menuItems = [
             { title: "Undock", text: "Undock", triggered: function() { undockWindow(existing, true); } },
-            { title: "Test Attention Poke", text: "Test Attention Poke", triggered: function() { attentionPokeAll("menu single/all"); } },
-            { title: "Restore All Docked Windows", text: "Restore All Docked Windows", triggered: function() { undockAllWindows(true, "menu"); } },
-            { title: "Reload Settings", text: "Reload Settings", triggered: function() { reloadSettingsViaKWinReconfigure("menu reload"); } },
-            { title: "Capture Window Info for Override", text: "Capture Window Info for Override", triggered: function() { logWindowInfoForOverride(win); } }
+            {
+                title: "More",
+                text: "More",
+                items: [
+                    { title: "Open Settings", text: "Open Settings", triggered: function() { openSettingsGui(); } },
+                    { title: "Test Attention Poke", text: "Test Attention Poke", triggered: function() { attentionPokeAll("menu single/all"); } },
+                    { title: "Restore All Docked Windows", text: "Restore All Docked Windows", triggered: function() { undockAllWindows(true, "menu"); } },
+                    { title: "Reload Settings", text: "Reload Settings", triggered: function() { reloadSettingsViaKWinReconfigure("menu reload"); } }
+                ]
+            }
         ];
     } else {
         menuItems = [
@@ -1638,10 +2317,17 @@ registerUserActionsMenu(function(win) {
             { title: "Right", text: "Right", triggered: function() { dockWindow(win, "right"); } },
             { title: "Top", text: "Top", triggered: function() { dockWindow(win, "top"); } },
             { title: "Bottom", text: "Bottom", triggered: function() { dockWindow(win, "bottom"); } },
-            { title: "Test All Attention Pokes", text: "Test All Attention Pokes", triggered: function() { attentionPokeAll("menu"); } },
-            { title: "Restore All Docked Windows", text: "Restore All Docked Windows", triggered: function() { undockAllWindows(true, "menu"); } },
-            { title: "Reload Settings", text: "Reload Settings", triggered: function() { reloadSettingsViaKWinReconfigure("menu reload"); } },
-            { title: "Capture Window Info for Override", text: "Capture Window Info for Override", triggered: function() { logWindowInfoForOverride(win); } }
+            {
+                title: "More",
+                text: "More",
+                items: [
+                    { title: "Arm Gesture Dock", text: "Arm Gesture Dock", triggered: function() { armGestureDock("menu"); } },
+                    { title: "Open Settings", text: "Open Settings", triggered: function() { openSettingsGui(); } },
+                    { title: "Test All Attention Pokes", text: "Test All Attention Pokes", triggered: function() { attentionPokeAll("menu"); } },
+                    { title: "Restore All Docked Windows", text: "Restore All Docked Windows", triggered: function() { undockAllWindows(true, "menu"); } },
+                    { title: "Reload Settings", text: "Reload Settings", triggered: function() { reloadSettingsViaKWinReconfigure("menu reload"); } }
+                ]
+            }
         ];
     }
 
@@ -1655,10 +2341,22 @@ registerUserActionsMenu(function(win) {
 workspace.cursorPosChanged.connect(checkCursor);
 function onWindowRemoved(win) {
     /*
+     * KWin can add/remove short-lived internal windows during interactive move
+     * and outline display. Do not let those unrelated removals cancel the
+     * active gesture for the real dragged window.
+     */
+    if (gestureActive && gestureActive.win === win) {
+        cancelGestureDock("gesture target window removed");
+    }
+
+    try { delete gestureConnected[winId(win)]; } catch (e0) {}
+
+    /*
      * If a normal/non-docked window closes, KWin may focus the hidden docked
      * window because it was recently active. Treat that as fallback focus,
      * not a deliberate Alt-Tab to the docked window.
      */
+    cancelPendingFocusReveal("window removed");
     var entry = findEntry(win);
 
     if (entry) {
@@ -1679,15 +2377,31 @@ try {
 }
 
 try {
-    if (workspace.activeWindow && isUsableWindow(workspace.activeWindow) && !isDockedWindow(workspace.activeWindow)) {
-        lastNonDockedFocus = workspace.activeWindow;
-        connectCloseSuppressor(lastNonDockedFocus);
-        log("Initial non-docked focus: " + lastNonDockedFocus.caption);
+    if (workspace.activeWindow && isFocusableWindow(workspace.activeWindow) && !isDockedWindow(workspace.activeWindow)) {
+        rememberNonDockedFocus(workspace.activeWindow, "startup");
+        log("Initial non-docked focus: " + workspace.activeWindow.caption);
     }
 } catch (e2) {}
 
 try {
-    workspace.windowAdded.connect(function(win) { connectCloseSuppressor(win); connectAttentionSignal(win); });
+    workspace.windowAdded.connect(function(win) {
+        connectCloseSuppressor(win);
+        connectAttentionSignal(win);
+        connectGestureSignals(win);
+
+        /*
+         * Opening apps through the launcher can make KWin briefly focus a
+         * hidden docked window while the new app window is being created.
+         * Suppress focus-triggered reveal during that short launch window.
+         * Hover reveal is unaffected.
+         */
+        try {
+            if (win && isFocusableWindow(win) && !isDockedWindow(win)) {
+                suppressFocusRevealFor(NEW_WINDOW_SUPPRESS_MS, "new non-docked window added");
+                cancelPendingFocusReveal("new non-docked window added");
+            }
+        } catch (eAdd) {}
+    });
     log("Connected windowAdded close suppressor.");
 } catch (e3) {
     log("Failed to connect windowAdded: " + e3);
@@ -1695,7 +2409,7 @@ try {
 
 try {
     var existing = workspace.stackingOrder;
-    for (var i = 0; i < existing.length; i++) { connectCloseSuppressor(existing[i]); connectAttentionSignal(existing[i]); }
+    for (var i = 0; i < existing.length; i++) { connectCloseSuppressor(existing[i]); connectAttentionSignal(existing[i]); connectGestureSignals(existing[i]); }
     log("Connected close suppressors to existing windows.");
 } catch (e4) {
     log("Could not connect close suppressors to existing windows: " + e4);

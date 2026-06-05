@@ -17,6 +17,18 @@ default_for() {
     suppressMinimizeFallback) echo true ;;
     allowMoveAlongDockEdge) echo true ;;
     hideOnDockEdgeHit) echo false ;;
+    gestureDockEnabled) echo false ;;
+    gestureDockMode) echo 0 ;;
+    gestureDockThresholdPx) echo 20 ;;
+    gestureDockTimeoutMs) echo 2500 ;;
+    gestureDockConeDegrees) echo 35 ;;
+    gestureIndicatorEnabled) echo true ;;
+    gestureSelectorMode) echo 1 ;;
+    gestureSelectorDistancePx) echo 78 ;;
+    gestureSelectorTileSizePx) echo 54 ;;
+    gestureSelectorMarginPx) echo 10 ;;
+    dockHintMode) echo 2 ;;
+    dockHintDelayMs) echo 500 ;;
     attentionPokeEnabled) echo true ;;
     attentionPokeMode) echo 0 ;;
     attentionPokePixels) echo 20 ;;
@@ -31,7 +43,7 @@ default_for() {
     defaultResizeHeightValue) echo 90 ;;
     attentionPreviewCounter) echo 0 ;;
     restoreAllCounter) echo 0 ;;
-    settingsCommand) echo "$HOME/Code/touch-slide-window-v42/touchslide-settings" ;;
+    settingsCommand) echo "$HOME/.local/bin/touchslide-settings" ;;
     *)
       if [[ "$1" =~ ^override[0-9][0-9]Enabled$ ]]; then echo false
       elif [[ "$1" =~ ^override[0-9][0-9]Name$ ]]; then echo ""
@@ -61,6 +73,18 @@ list_keys() {
     suppressMinimizeFallback \
     allowMoveAlongDockEdge \
     hideOnDockEdgeHit \
+    gestureDockEnabled \
+    gestureDockMode \
+    gestureDockThresholdPx \
+    gestureDockTimeoutMs \
+    gestureDockConeDegrees \
+    gestureIndicatorEnabled \
+    gestureSelectorMode \
+    gestureSelectorDistancePx \
+    gestureSelectorTileSizePx \
+    gestureSelectorMarginPx \
+    dockHintMode \
+    dockHintDelayMs \
     attentionPokeEnabled \
     attentionPokeMode \
     attentionPokePixels \
@@ -113,7 +137,6 @@ Usage:
   touchslide-config preview
   touchslide-config restore-all
   touchslide-config reload
-  touchslide-config import-last-capture
   touchslide-config safe-disable
   touchslide-config gui
 EOF
@@ -140,84 +163,6 @@ bump_counter() {
   new=$((old + 1))
   kwriteconfig6 --file kwinrc --group "$GROUP" --key "$key" "$new"
   reconfigure
-}
-
-
-decode_capture_field() {
-  local line="$1"
-  local key="$2"
-  printf '%s\n' "$line" | sed -n "s/.*|${key}=\([^|]*\).*/\1/p" | tail -n 1
-}
-
-find_last_capture_line() {
-  # KWin print() output usually lands in the user/system journal. Try both.
-  local line=""
-  line="$(journalctl --user --since "2 hours ago" --no-pager 2>/dev/null | grep 'OVERRIDE_CAPTURE|' | tail -n 1 || true)"
-  if [ -z "$line" ]; then
-    line="$(journalctl --since "2 hours ago" --no-pager 2>/dev/null | grep 'OVERRIDE_CAPTURE|' | tail -n 1 || true)"
-  fi
-  printf '%s\n' "$line"
-}
-
-first_empty_override_slot() {
-  local i key name match
-  for i in $(seq -w 1 50); do
-    name="$(kreadconfig6 --file kwinrc --group "$GROUP" --key "override${i}Name" 2>/dev/null || true)"
-    match="$(kreadconfig6 --file kwinrc --group "$GROUP" --key "override${i}Match" 2>/dev/null || true)"
-    if [ -z "$name" ] && [ -z "$match" ]; then
-      printf '%s\n' "$i"
-      return 0
-    fi
-  done
-  return 1
-}
-
-import_last_capture() {
-  local line slot name match target
-
-  line="$(find_last_capture_line)"
-  if [ -z "$line" ]; then
-    echo "No OVERRIDE_CAPTURE line found in journal from the last 2 hours." >&2
-    echo "Use the titlebar menu: Touch Slide Window -> Capture Window Info for Override" >&2
-    return 1
-  fi
-
-  name="$(decode_capture_field "$line" "name")"
-  match="$(decode_capture_field "$line" "match")"
-  target="$(decode_capture_field "$line" "target")"
-
-  if [ -z "$match" ]; then
-    echo "Capture line found, but it did not contain a usable match field." >&2
-    echo "$line" >&2
-    return 1
-  fi
-
-  case "$target" in
-    0|1|2|3) ;;
-    *) target=0 ;;
-  esac
-
-  slot="$(first_empty_override_slot)" || {
-    echo "No empty override slot found. Clear one of the 50 override rows first." >&2
-    return 1
-  }
-
-  kwriteconfig6 --file kwinrc --group "$GROUP" --key "override${slot}Enabled" false
-  kwriteconfig6 --file kwinrc --group "$GROUP" --key "override${slot}Name" "${name:-$match}"
-  kwriteconfig6 --file kwinrc --group "$GROUP" --key "override${slot}Match" "$match"
-  kwriteconfig6 --file kwinrc --group "$GROUP" --key "override${slot}Target" "$target"
-  kwriteconfig6 --file kwinrc --group "$GROUP" --key "override${slot}CenterEnabled" false
-  kwriteconfig6 --file kwinrc --group "$GROUP" --key "override${slot}ResizeEnabled" false
-  kwriteconfig6 --file kwinrc --group "$GROUP" --key "override${slot}WidthValue" 0
-  kwriteconfig6 --file kwinrc --group "$GROUP" --key "override${slot}HeightValue" 0
-
-  reconfigure
-
-  echo "Imported latest captured window into override row ${slot}."
-  echo "Name=${name:-$match}"
-  echo "Match=$match"
-  echo "Target=$target"
-  echo "The row is filled but left disabled. Enable C/S/W/H in the KWin config GUI, then Apply and reload."
 }
 
 
@@ -256,9 +201,6 @@ case "${1:-}" in
     reconfigure
     echo "Requested KWin reconfigure. Press Meta+Ctrl+Alt+R if needed."
     ;;
-  import-last-capture)
-    import_last_capture
-    ;;
   safe-disable)
     bump_counter restoreAllCounter
     sleep 1
@@ -267,7 +209,9 @@ case "${1:-}" in
     echo "Requested restore-all, then disabled Touch Slide Window."
     ;;
   gui)
-    exec "$(dirname "$0")/touchslide-settings"
+    kcmshell6 kcm_kwin4_genericscripted --args "touch-slide-window KWin/Script" --caption "Touch Slide Window Settings" \
+      || systemsettings kcm_kwin_scripts \
+      || exec "$(dirname "$0")/touchslide-settings"
     ;;
   *)
     usage

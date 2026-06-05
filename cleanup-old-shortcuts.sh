@@ -18,7 +18,9 @@ kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: 
 kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Dock Bottom" "Meta+Ctrl+Alt+Down,none,Touch Slide Window: Dock Bottom"
 kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Reload Settings" "Meta+Ctrl+Alt+R,none,Touch Slide Window: Reload Settings"
 kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Test Attention Poke" "Meta+Ctrl+Alt+P,none,Touch Slide Window: Test Attention Poke"
+kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Arm Gesture Dock" "Meta+G,none,Touch Slide Window: Arm Gesture Dock"
 kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Restore All" "Meta+Ctrl+Alt+U,none,Touch Slide Window: Restore All"
+kwriteconfig6 --file kglobalshortcutsrc --group kwin --key "Touch Slide Window: Open Settings" ",none,Touch Slide Window: Open Settings"
 
 systemctl --user start plasma-kglobalaccel.service >/dev/null 2>&1 || true
 systemctl --user restart plasma-kglobalaccel.service >/dev/null 2>&1 || true
